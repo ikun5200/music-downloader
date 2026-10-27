@@ -1,0 +1,13 @@
+/node_modules/
+/.next/
+/out/
+/coverage/
+/.env
+/.env.*
+!/.env.example
+/data/
+/downloads/
+/seed-sources/
+*.log
+.DS_Store
+*.tsbuildinfo

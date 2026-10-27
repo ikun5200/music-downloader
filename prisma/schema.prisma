@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Source {
+  id         String       @id @default(cuid())
+  name       String
+  version    String?
+  fileName   String
+  filePath   String
+  enabled    Boolean      @default(true)
+  priority   Int          @default(100)
+  platforms  String       @default("[]")
+  qualities  String       @default("{}")
+  lastInitAt DateTime?
+  lastError  String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  stats      SourceStat[]
+  jobs       DownloadJob[]
+}
+
+model SourceStat {
+  id                  String    @id @default(cuid())
+  sourceId            String
+  platform            String
+  attempts            Int       @default(0)
+  successes           Int       @default(0)
+  consecutiveFailures Int       @default(0)
+  cooldownUntil       DateTime?
+  avgLatencyMs        Int       @default(0)
+  lastSuccessAt       DateTime?
+  lastError           String?
+
+  source              Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, platform])
+  @@index([sourceId])
+}
+
+model DownloadJob {
+  id               String    @id @default(cuid())
+  platform         String
+  songId           String
+  title            String
+  artist           String
+  album            String?
+  coverUrl         String?
+  musicInfo        String
+  requestedQuality String?
+  actualQuality    String?
+  qualityVerdict   String?
+  channelId        String?
+  status           String    @default("queued")
+  progress         Float     @default(0)
+  bytesDone        Int       @default(0)
+  bytesTotal       Int?
+  filePath         String?
+  urlHost          String?
+  attempts         String    @default("[]")
+  verified         Boolean   @default(false)
+  reviewNote       String?
+  error            String?
+  createdAt        DateTime  @default(now())
+  startedAt        DateTime?
+  finishedAt       DateTime?
+
+  channel          Source?   @relation(fields: [channelId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+model ApiToken {
+  id         String    @id @default(cuid())
+  name       String
+  tokenHash  String    @unique
+  enabled    Boolean   @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model BatchJob {
+  id         String      @id @default(cuid())
+  status     String      @default("queued")
+  quality    String?
+  total      Int
+  processed  Int         @default(0)
+  succeeded  Int         @default(0)
+  failed     Int         @default(0)
+  error      String?
+  createdAt  DateTime    @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+  items      BatchItem[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model BatchItem {
+  id              String    @id @default(cuid())
+  batchId         String
+  line            String
+  status          String    @default("pending")
+  platform        String?
+  songId          String?
+  title           String?
+  artist          String?
+  album           String?
+  coverUrl        String?
+  musicInfo       String?
+  downloadJobId   String?
+  selectionReason String?
+  aiUsed          Boolean   @default(false)
+  error           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  batch           BatchJob  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, status])
+}

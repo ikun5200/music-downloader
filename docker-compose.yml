@@ -1,0 +1,48 @@
+services:
+  music-downloader:
+    # NAS 直接拉取 GitHub Actions 构建的镜像；本地构建见 docker-compose.build.yml。
+    image: ${IMAGE:-ghcr.io/ikun5200/music-downloader:latest}
+    container_name: music-downloader
+    # 飞牛 NAS 为 x86_64；Apple Silicon 本地调试可改为 linux/arm64。
+    platform: linux/amd64
+    pull_policy: always
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      # 宿主机音乐目录 -> 容器下载目录，按你的实际路径修改。
+      - "/vol1/1000/音乐:/downloads"
+      # SQLite、上传的音源脚本、临时文件。
+      - "./data:/app/data"
+    environment:
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?请先复制 .env.example 为 .env 并设置 ADMIN_PASSWORD}"
+      AUTH_SECRET: "${AUTH_SECRET:?请先复制 .env.example 为 .env 并设置 AUTH_SECRET}"
+      DOWNLOAD_DIR: "/downloads"
+      # 仅用于在界面展示宿主机真实路径，不参与容器内文件操作
+      HOST_DOWNLOAD_DIR: "${HOST_DOWNLOAD_DIR:-/vol1/1000/音乐}"
+      DATABASE_URL: "file:/app/data/app.db?connection_limit=1&socket_timeout=30"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://192.168.1.10:3000}"
+      MAX_CONCURRENT_DOWNLOADS: "${MAX_CONCURRENT_DOWNLOADS:-2}"
+      TZ: "${TZ:-Asia/Shanghai}"
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      SKIP_MIGRATIONS: "${SKIP_MIGRATIONS:-0}"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

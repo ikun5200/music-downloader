@@ -1,0 +1,8 @@
+# 本地从源码构建时使用：
+# docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  music-downloader:
+    image: music-downloader:local
+    build:
+      context: .
+      dockerfile: Dockerfile
