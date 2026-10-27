@@ -15,7 +15,7 @@ const VERSION_SUFFIX_RE =
 // 精选/合集类专辑的曲目号和封面经常被重新编排，不能拿来当原版专辑信息。
 // “概念自选辑”这类正式发行专辑不算合集。
 const COMPILATION_RE =
-  /(精选|作品精选|作品集|合集|合辑|纪念专辑|珍藏|典藏|套装|新歌\+|金曲|全记录|历年|greatest\s*hits|best\s*of|collection|anthology|compilation|box\s*set)/i
+  /(精选|作品精选|作品集|合集|合辑|纪念专辑|珍藏|典藏|套装|新歌\+|金曲|全记录|历年|他[是为][…\.．]{1,3}|greatest\s*hits|best\s*of|collection|anthology|compilation|box\s*set)/i
 
 export function isCompilationAlbum(value: string | null | undefined): boolean {
   const text = toSimplified(String(value || '')).trim()
