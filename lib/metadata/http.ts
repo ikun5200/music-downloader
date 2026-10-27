@@ -19,8 +19,15 @@ async function throttleHost(url: string): Promise<void> {
   } catch {
     return
   }
-  const interval =
-    host.includes('lrclib.net') || host.includes('theaudiodb.com') ? 1000 : 350
+  const interval = host.includes('music.163.com')
+    ? 2000
+    : host.includes('lrclib.net') || host.includes('theaudiodb.com')
+      ? 1000
+      : host.includes('kugou.com') || host.includes('kuwo.cn')
+        ? 600
+        : host.includes('qq.com')
+          ? 1000
+          : 400
   const last = hostLastAt.get(host) || 0
   const wait = interval - (Date.now() - last)
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
