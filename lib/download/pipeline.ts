@@ -13,6 +13,7 @@ import { buildRelativePath, ensureDownloadDirs, uniquePath } from './filename'
 import { probeAudio } from './probe'
 import { actualQuality as deriveActualQuality, extensionFor } from './quality'
 import { validateFile } from './validator'
+import { wakeMetadataQueue } from '../metadata/queue'
 
 const cancelControllers = new Map<string, AbortController>()
 const lastProgressAt = new Map<string, number>()
@@ -236,8 +237,18 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
           : candidate.validation.reviewNote || null,
         attempts: JSON.stringify(attempts.slice(-30)),
         error: null,
+        metadataStatus: settings.metadataScrapeEnabled ? 'pending' : 'disabled',
+        metadataSource: null,
+        metadataTitle: null,
+        metadataArtist: null,
+        metadataAlbum: null,
+        metadataNote: settings.metadataScrapeEnabled
+          ? '等待下载后自动刮削'
+          : '下载后自动刮削未开启',
+        metadataAt: null,
         finishedAt: new Date(),
       })
+      if (settings.metadataScrapeEnabled) wakeMetadataQueue()
       await recordStat(candidate.channel.id, platform, true, Date.now() - candidate.startedAt)
     }
 

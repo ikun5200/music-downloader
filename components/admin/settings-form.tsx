@@ -11,7 +11,9 @@ import {
   Save,
   SlidersHorizontal,
   Sparkles,
+  Tags,
   Trash2,
+  Wand2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -20,6 +22,12 @@ import { Switch } from '@/components/ui/switch'
 import { PLATFORMS, PLATFORM_NAMES, type Platform } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import type { AppSettings, QualityStrategy } from '@/lib/settings'
+import type { MetadataSourceId } from '@/lib/metadata/types'
+
+const METADATA_SOURCE_LABELS: Record<MetadataSourceId, string> = {
+  itunes: 'iTunes（中国区 → 台湾区）',
+  qqmusic: 'QQ 音乐',
+}
 
 interface SourceOption {
   id: string
@@ -58,6 +66,17 @@ export function SettingsForm({
   const [aiApiKey, setAiApiKey] = useState('')
   const [keySet, setKeySet] = useState(initial.aiApiKeySet)
   const [aiTitleClean, setAiTitleClean] = useState(initial.aiTitleCleanEnabled)
+  const [metadataEnabled, setMetadataEnabled] = useState(initial.metadataScrapeEnabled)
+  const [metadataSourceOrder, setMetadataSourceOrder] = useState<MetadataSourceId[]>(
+    initial.metadataSourceOrder?.length
+      ? initial.metadataSourceOrder
+      : ['itunes', 'qqmusic']
+  )
+  const [metadataWriteInfo, setMetadataWriteInfo] = useState(initial.metadataWriteInfo)
+  const [metadataWriteCover, setMetadataWriteCover] = useState(initial.metadataWriteCover)
+  const [metadataWriteLyrics, setMetadataWriteLyrics] = useState(initial.metadataWriteLyrics)
+  const [metadataAiEnabled, setMetadataAiEnabled] = useState(initial.metadataAiEnabled)
+  const [rescraping, setRescraping] = useState(false)
   const [testingAi, setTestingAi] = useState(false)
   const [clearingAi, setClearingAi] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -127,6 +146,12 @@ export function SettingsForm({
           aiBaseUrl: aiBaseUrl.trim(),
           aiModel: aiModel.trim(),
           ...(aiApiKey.trim() ? { aiApiKey: aiApiKey.trim() } : {}),
+          metadataScrapeEnabled: metadataEnabled,
+          metadataSourceOrder,
+          metadataWriteInfo,
+          metadataWriteCover,
+          metadataWriteLyrics,
+          metadataAiEnabled,
         }),
       })
       const json = await res.json()
@@ -238,12 +263,40 @@ export function SettingsForm({
     setSourceOrdersReady(true)
   }
 
+  function moveMetadataSource(index: number, delta: number) {
+    setMetadataSourceOrder((current) => moveItem(current, index, delta))
+  }
+
+  async function rescrapeHistory() {
+    if (rescraping) return
+    if (!window.confirm('把历史已下载但未成功刮削的歌曲重新加入刮削队列？后台会逐首处理。')) return
+    setRescraping(true)
+    try {
+      const res = await fetch('/api/admin/metadata/rescrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (!res.ok || json.code !== 0) throw new Error(json.message || '提交失败')
+      toast.success(`已加入刮削队列：${json.data?.queued ?? 0} 首`, {
+        description: '可在下载页面查看每首歌的刮削状态。',
+      })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRescraping(false)
+    }
+  }
+
+  const aiReady = aiEnabled && (keySet || !!aiApiKey.trim())
+
   return (
     <div className="animate-fade-in">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-white">设置</h1>
-          <p className="mt-1 text-[12px] text-white/35">下载策略、平台与音源优先级、AI 选版。</p>
+          <p className="mt-1 text-[12px] text-white/35">下载策略、平台与音源优先级、AI 选版、下载后元数据刮削。</p>
         </div>
         <Button size="sm" onClick={() => void save()} disabled={saving} className="shrink-0 whitespace-nowrap">
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
@@ -427,6 +480,134 @@ export function SettingsForm({
           ) : null}
           <span className="text-[10.5px] text-white/25">
             Key 使用 AES-256-GCM 加密后保存在数据库；只支持 /chat/completions 格式。
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-3 lift rounded-2xl border border-white/[0.06] bg-white/[0.022] p-5 hover:border-white/[0.1]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[12px] font-medium text-white/70">
+            <Tags className="h-4 w-4 text-violet-300/60" /> 下载后自动刮削
+          </div>
+          <Switch
+            checked={metadataEnabled}
+            onChange={setMetadataEnabled}
+            label="下载后自动刮削"
+          />
+        </div>
+        <p className="mt-1.5 text-[10.5px] leading-4 text-white/25">
+          下载完成后按顺序检索元数据，把歌名、歌手、专辑、年份、封面和 LRC
+          歌词写入音频文件；只重写标签，不重新编码音频。iTunes 默认先查中国区，没有可信原版再回退台湾区。
+        </p>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-white/40">元数据源优先级</span>
+              <span className="text-[9.5px] text-white/20">越靠前越优先</span>
+            </div>
+            <div className="mt-2 space-y-1">
+              {metadataSourceOrder.map((source, index) => (
+                <div
+                  key={source}
+                  className="flex items-center gap-2 rounded-lg border border-white/[0.05] bg-black/15 px-2.5 py-1.5"
+                >
+                  <span className="w-4 text-[10px] tabular-nums text-white/25">
+                    {index + 1}
+                  </span>
+                  <span className="flex-1 text-[11.5px] text-white/70">
+                    {METADATA_SOURCE_LABELS[source]}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => moveMetadataSource(index, -1)}
+                    disabled={index === 0}
+                    aria-label={`上移 ${METADATA_SOURCE_LABELS[source]}`}
+                    className="rounded p-1 text-white/30 hover:bg-white/[0.06] hover:text-white/70 disabled:pointer-events-none disabled:opacity-20"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveMetadataSource(index, 1)}
+                    disabled={index === metadataSourceOrder.length - 1}
+                    aria-label={`下移 ${METADATA_SOURCE_LABELS[source]}`}
+                    className="rounded p-1 text-white/30 hover:bg-white/[0.06] hover:text-white/70 disabled:pointer-events-none disabled:opacity-20"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-[10px] leading-4 text-white/20">
+              iTunes 不提供歌词；选中 iTunes 时会自动用 QQ 音乐的同曲候选补歌词和封面。
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="text-[11px] text-white/55">写入歌曲信息</div>
+              <Switch
+                checked={metadataWriteInfo}
+                onChange={setMetadataWriteInfo}
+                label="写入歌曲信息"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="text-[11px] text-white/55">写入封面</div>
+              <Switch
+                checked={metadataWriteCover}
+                onChange={setMetadataWriteCover}
+                label="写入封面"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="text-[11px] text-white/55">写入歌词</div>
+              <Switch
+                checked={metadataWriteLyrics}
+                onChange={setMetadataWriteLyrics}
+                label="写入歌词"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-[11px] text-white/55">AI 识别 / 纠错</div>
+                <div className="mt-0.5 text-[10px] leading-4 text-white/25">
+                  规则无法确定时让 AI 选原版；失败自动回退规则。
+                </div>
+              </div>
+              <Switch
+                checked={metadataAiEnabled}
+                onChange={setMetadataAiEnabled}
+                disabled={!aiReady}
+                label="AI 识别/纠错"
+              />
+            </div>
+            {!aiReady ? (
+              <p className="text-[10px] leading-4 text-amber-300/45">
+                需先开启「AI 选版」并配置 API Key；未配置时仍可正常刮削，只是不使用 AI。
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void rescrapeHistory()}
+            disabled={rescraping || !metadataEnabled}
+            className="shrink-0 whitespace-nowrap"
+          >
+            {rescraping ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Wand2 className="h-3.5 w-3.5" />
+            )}
+            刮削历史下载
+          </Button>
+          <span className="text-[10px] leading-4 text-white/25">
+            只处理已完成但未成功刮削的任务；已成功的不会重复处理。
           </span>
         </div>
       </div>

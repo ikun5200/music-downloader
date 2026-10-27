@@ -4,6 +4,7 @@ import { prisma } from './db'
 import { ensureDownloadDirs } from './download/filename'
 import { startQueue } from './download/queue'
 import { startBatchQueue } from './batch/queue'
+import { startMetadataQueue } from './metadata/queue'
 import { claimQueueBoot } from './queue-boot'
 import { defaultPlatformRank } from './sources/priority'
 import { PLATFORMS } from './constants'
@@ -24,6 +25,7 @@ async function runBootstrap() {
   await claimQueueBoot()
   await startQueue()
   await startBatchQueue()
+  await startMetadataQueue()
 }
 
 async function ensurePlatformPriority() {

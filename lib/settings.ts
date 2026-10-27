@@ -1,6 +1,7 @@
 import { prisma } from './db'
 import { decryptSecret, encryptSecret } from './secrets'
 import { PLATFORMS, type Platform } from './constants'
+import type { MetadataSourceId } from './metadata/types'
 
 export type QualityStrategy = 'highest' | 'strict' | 'flacFirst'
 
@@ -17,6 +18,12 @@ export interface AppSettings {
   aiModel: string
   aiApiKeySet: boolean
   aiTitleCleanEnabled: boolean
+  metadataScrapeEnabled: boolean
+  metadataSourceOrder: MetadataSourceId[]
+  metadataWriteInfo: boolean
+  metadataWriteCover: boolean
+  metadataWriteLyrics: boolean
+  metadataAiEnabled: boolean
 }
 
 export interface AiConfig {
@@ -45,6 +52,41 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiModel: 'gpt-4o-mini',
   aiApiKeySet: false,
   aiTitleCleanEnabled: true,
+  metadataScrapeEnabled: true,
+  metadataSourceOrder: ['itunes', 'qqmusic'],
+  metadataWriteInfo: true,
+  metadataWriteCover: true,
+  metadataWriteLyrics: true,
+  metadataAiEnabled: true,
+}
+
+export const METADATA_SOURCES: MetadataSourceId[] = ['itunes', 'qqmusic']
+
+export function normalizeMetadataSourceOrder(value: unknown): MetadataSourceId[] {
+  const input = Array.isArray(value) ? value : []
+  const out: MetadataSourceId[] = []
+  for (const item of input) {
+    if (
+      typeof item === 'string' &&
+      (METADATA_SOURCES as string[]).includes(item) &&
+      !out.includes(item as MetadataSourceId)
+    ) {
+      out.push(item as MetadataSourceId)
+    }
+  }
+  for (const source of METADATA_SOURCES) {
+    if (!out.includes(source)) out.push(source)
+  }
+  return out
+}
+
+function parseMetadataSourceOrder(raw?: string): MetadataSourceId[] {
+  if (!raw) return [...METADATA_SOURCES]
+  try {
+    return normalizeMetadataSourceOrder(JSON.parse(raw))
+  } catch {
+    return [...METADATA_SOURCES]
+  }
 }
 
 export function normalizePlatformOrder(value: unknown): Platform[] {
@@ -103,6 +145,12 @@ function parseSettings(rows: { key: string; value: string }[]): AppSettings {
     aiModel: pick('aiModel') || DEFAULT_SETTINGS.aiModel,
     aiApiKeySet: !!pick('aiApiKey'),
     aiTitleCleanEnabled: (pick('aiTitleCleanEnabled') ?? 'true') !== 'false',
+    metadataScrapeEnabled: (pick('metadataScrapeEnabled') ?? 'true') !== 'false',
+    metadataSourceOrder: parseMetadataSourceOrder(pick('metadataSourceOrder')),
+    metadataWriteInfo: (pick('metadataWriteInfo') ?? 'true') !== 'false',
+    metadataWriteCover: (pick('metadataWriteCover') ?? 'true') !== 'false',
+    metadataWriteLyrics: (pick('metadataWriteLyrics') ?? 'true') !== 'false',
+    metadataAiEnabled: (pick('metadataAiEnabled') ?? 'true') !== 'false',
   }
 }
 
@@ -169,6 +217,27 @@ export async function setSettings(values: SettingsPatch) {
   if (values.aiModel) entries.push(['aiModel', values.aiModel])
   if (values.aiTitleCleanEnabled != null) {
     entries.push(['aiTitleCleanEnabled', String(values.aiTitleCleanEnabled)])
+  }
+  if (values.metadataScrapeEnabled != null) {
+    entries.push(['metadataScrapeEnabled', String(values.metadataScrapeEnabled)])
+  }
+  if (values.metadataSourceOrder) {
+    entries.push([
+      'metadataSourceOrder',
+      JSON.stringify(normalizeMetadataSourceOrder(values.metadataSourceOrder)),
+    ])
+  }
+  if (values.metadataWriteInfo != null) {
+    entries.push(['metadataWriteInfo', String(values.metadataWriteInfo)])
+  }
+  if (values.metadataWriteCover != null) {
+    entries.push(['metadataWriteCover', String(values.metadataWriteCover)])
+  }
+  if (values.metadataWriteLyrics != null) {
+    entries.push(['metadataWriteLyrics', String(values.metadataWriteLyrics)])
+  }
+  if (values.metadataAiEnabled != null) {
+    entries.push(['metadataAiEnabled', String(values.metadataAiEnabled)])
   }
   if (values.aiApiKey !== undefined && !/^[•*]+$/.test(values.aiApiKey)) {
     entries.push(['aiApiKey', values.aiApiKey ? encryptSecret(values.aiApiKey) : ''])

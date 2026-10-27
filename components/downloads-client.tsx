@@ -47,6 +47,13 @@ interface JobDto {
   attempts: Array<{ sourceName?: string; quality?: string; error?: string }>
   verified: boolean
   reviewNote?: string | null
+  metadataStatus?: string | null
+  metadataSource?: string | null
+  metadataTitle?: string | null
+  metadataArtist?: string | null
+  metadataAlbum?: string | null
+  metadataNote?: string | null
+  metadataAt?: string | null
   error?: string | null
   createdAt: string
   startedAt?: string | null
@@ -63,6 +70,35 @@ const STATUS: Record<string, { label: string; tone: 'neutral' | 'violet' | 'cyan
   completed: { label: '已完成', tone: 'green' },
   failed: { label: '失败', tone: 'red' },
   canceled: { label: '已取消', tone: 'amber' },
+}
+
+const METADATA_SOURCE_SHORT: Record<string, string> = {
+  itunes: 'iTunes',
+  qqmusic: 'QQ 音乐',
+}
+
+function metadataBadge(job: JobDto): {
+  label: string
+  tone: 'neutral' | 'violet' | 'cyan' | 'green' | 'red' | 'amber'
+} | null {
+  switch (job.metadataStatus) {
+    case 'pending':
+    case 'processing':
+      return { label: '刮削中', tone: 'violet' }
+    case 'success':
+      return {
+        label: `已刮削 · ${METADATA_SOURCE_SHORT[job.metadataSource || ''] || '元数据'}`,
+        tone: 'green',
+      }
+    case 'partial':
+      return { label: '部分刮削', tone: 'amber' }
+    case 'not_found':
+      return { label: '未找到元数据', tone: 'neutral' }
+    case 'failed':
+      return { label: '刮削失败', tone: 'red' }
+    default:
+      return null
+  }
 }
 
 function encodePath(path: string) {
@@ -279,6 +315,7 @@ export function DownloadsClient() {
 
   function JobCard({ job, selectable = false }: { job: JobDto; selectable?: boolean }) {
     const status = STATUS[job.status] || STATUS.queued
+    const metaBadge = metadataBadge(job)
     const activeJob = ACTIVE.has(job.status)
     const isBusy = busy?.endsWith(job.id) || busy === 'batch-delete'
     const isSelected = selected.has(job.id)
@@ -326,6 +363,7 @@ export function DownloadsClient() {
                 <Badge tone="amber">已降级</Badge>
               ) : null}
               {job.verified ? <Badge tone="green">已校验</Badge> : null}
+              {metaBadge ? <Badge tone={metaBadge.tone}>{metaBadge.label}</Badge> : null}
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-white/35">
               <PlatformBadge platform={job.platform} showName={false} className="border-0 bg-transparent px-0" />
@@ -401,6 +439,23 @@ export function DownloadsClient() {
 
             {job.reviewNote ? (
               <div className="mt-1 text-[10.5px] text-amber-300/50">备注：{job.reviewNote}</div>
+            ) : null}
+
+            {job.metadataNote &&
+            job.metadataStatus &&
+            !['none', 'disabled'].includes(job.metadataStatus) ? (
+              <div
+                className={cn(
+                  'mt-1 text-[10.5px]',
+                  job.metadataStatus === 'failed'
+                    ? 'text-red-300/55'
+                    : job.metadataStatus === 'not_found'
+                      ? 'text-white/25'
+                      : 'text-emerald-300/45'
+                )}
+              >
+                元数据：{job.metadataNote}
+              </div>
             ) : null}
 
             {!activeJob ? (

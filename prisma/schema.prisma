@@ -66,6 +66,13 @@ model DownloadJob {
   attempts         String    @default("[]")
   verified         Boolean   @default(false)
   reviewNote       String?
+  metadataStatus   String    @default("none")
+  metadataSource   String?
+  metadataTitle    String?
+  metadataArtist   String?
+  metadataAlbum    String?
+  metadataNote     String?
+  metadataAt       DateTime?
   error            String?
   createdAt        DateTime  @default(now())
   startedAt        DateTime?
@@ -75,6 +82,7 @@ model DownloadJob {
 
   @@index([status])
   @@index([createdAt])
+  @@index([metadataStatus])
 }
 
 model Setting {

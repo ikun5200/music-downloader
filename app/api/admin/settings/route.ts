@@ -21,6 +21,12 @@ const schema = z.object({
   aiModel: z.string().min(1).max(200).optional(),
   aiApiKey: z.string().max(1000).optional(),
   aiTitleCleanEnabled: z.boolean().optional(),
+  metadataScrapeEnabled: z.boolean().optional(),
+  metadataSourceOrder: z.array(z.enum(['itunes', 'qqmusic'])).min(1).max(2).optional(),
+  metadataWriteInfo: z.boolean().optional(),
+  metadataWriteCover: z.boolean().optional(),
+  metadataWriteLyrics: z.boolean().optional(),
+  metadataAiEnabled: z.boolean().optional(),
 })
 
 export async function GET() {
