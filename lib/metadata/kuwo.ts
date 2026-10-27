@@ -1,6 +1,6 @@
 import JSON5 from 'json5'
 import { fetchText } from './http'
-import { toSimplified } from './normalize'
+import { cleanPromoSuffix, toSimplified } from './normalize'
 import type { MetadataCandidate, MetadataQuery, MetadataSourceResult } from './types'
 
 const SEARCH_URL = 'http://search.kuwo.cn/r.s'
@@ -21,7 +21,14 @@ interface KuwoResponse {
 }
 
 function cleanText(value: string | undefined): string {
-  return toSimplified(String(value || '').replace(/&nbsp;/g, ' ').trim())
+  return toSimplified(
+    String(value || '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\\u([0-9a-f]{4})/gi, (_, code: string) =>
+        String.fromCharCode(parseInt(code, 16))
+      )
+      .trim()
+  )
 }
 
 export async function searchKuwo(
@@ -68,7 +75,7 @@ export async function searchKuwo(
       candidates.push({
         source: 'kuwo',
         sourceLabel: '酷我音乐',
-        title: rawTitle,
+        title: cleanPromoSuffix(rawTitle),
         artist,
         artists: artist.split(/[、/&,，;；]/).map((part) => part.trim()).filter(Boolean),
         album: cleanText(song.ALBUM),

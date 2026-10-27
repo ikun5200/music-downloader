@@ -1,5 +1,5 @@
 import { fetchJson } from './http'
-import { matchArtist, matchTitle, toSimplified } from './normalize'
+import { cleanPromoSuffix, matchArtist, matchTitle, toSimplified } from './normalize'
 import type { MetadataCandidate, MetadataQuery, MetadataSourceResult } from './types'
 
 const SEARCH_URL = 'https://songsearch.kugou.com/song_search_v2'
@@ -53,7 +53,7 @@ function buildCandidate(song: KugouSong): MetadataCandidate | null {
   return {
     source: 'kugou',
     sourceLabel: '酷狗音乐',
-    title: toSimplified(rawTitle),
+    title: cleanPromoSuffix(toSimplified(rawTitle)),
     artist: toSimplified(artist),
     artists: artist.split(/[、/&,，;；]/).map((part) => toSimplified(part.trim())).filter(Boolean),
     album: toSimplified((song.AlbumName || '').trim()),

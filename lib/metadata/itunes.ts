@@ -1,5 +1,5 @@
 import { fetchJson } from './http'
-import { scoreCandidate, toSimplified } from './normalize'
+import { cleanPromoSuffix, scoreCandidate, toSimplified } from './normalize'
 import type { MetadataCandidate, MetadataQuery } from './types'
 
 interface ItunesResult {
@@ -40,7 +40,7 @@ function buildCandidate(item: ItunesResult): MetadataCandidate | null {
   return {
     source: 'itunes',
     sourceLabel: 'iTunes',
-    title: toSimplified(rawTitle),
+    title: cleanPromoSuffix(toSimplified(rawTitle)),
     artist: toSimplified(artist),
     album: toSimplified((item.collectionName || '').trim()),
     date: (item.releaseDate || '').slice(0, 10),

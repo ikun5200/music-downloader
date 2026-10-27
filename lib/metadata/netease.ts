@@ -1,5 +1,5 @@
 import { fetchJson } from './http'
-import { toSimplified } from './normalize'
+import { cleanPromoSuffix, toSimplified } from './normalize'
 import type { MetadataCandidate, MetadataQuery, MetadataSourceResult } from './types'
 
 const CLOUD_SEARCH_URL = 'https://music.163.com/api/cloudsearch/pc'
@@ -103,7 +103,7 @@ function buildCandidate(song: NeteaseSong): MetadataCandidate | null {
   return {
     source: 'netease',
     sourceLabel: '网易云音乐',
-    title: toSimplified(rawTitle),
+    title: cleanPromoSuffix(toSimplified(rawTitle)),
     artist: toSimplified(artists.join(' / ')),
     artists: artists.map(toSimplified),
     album: toSimplified((album.name || '').replace(/\ufeff/g, '').trim()),

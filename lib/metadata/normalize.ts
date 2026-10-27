@@ -7,6 +7,8 @@ const VARIANT_RE =
   /(live|现场|演唱会|remix|混音|伴奏|纯音乐|instrumental|acoustic|karaoke|卡拉\s*ok|翻唱|cover|dj|慢摇|加快|加速|变调|降调|升调|串烧|铃声|mv版|片段|剪辑|独白版|女声版|男声版|童声|钢琴版|吉他版|弹唱版|纯享版|深情版|治愈版|温柔版|烟嗓版|环绕版|3d环绕|广场舞|车载|demo|试听|抢听|预告|改编|慢速|0\.8x|1\.2x)/gi
 
 const BRACKET_RE = /[（(【\[][^）)】\]]*[）)】\]]/g
+const PROMO_SUFFIX_RE =
+  /\s*[-—–]\s*[^-—–]*(?:主题曲|片头曲|片尾曲|插曲|推广曲|宣传曲|印象曲|概念曲|人物曲|角色曲|献礼曲|周年|活动|游戏|电影|电视剧|动画|网剧|纪录片|综艺|官方|mv|版)[^-—–]*$/i
 const VERSION_SUFFIX_RE =
   /\s*[-—–]\s*(?:铃声|伴奏|remix|mix|live|现场|演唱会|纯音乐|翻唱|cover|instrumental|acoustic|dj|慢摇|加快|加速|变调|降调|升调|串烧|伴奏版|纯音乐版|独白版|mv版|片段|剪辑|女声版|男声版|童声|钢琴版|吉他版|弹唱版|纯享版|深情版|治愈版|温柔版|烟嗓版|环绕版|广场舞|车载|demo|试听|抢听|预告|改编)[版曲]?\s*$/i
 
@@ -31,27 +33,62 @@ export function titleKey(value: string): string {
   const cleaned = (value || '')
     .replace(BRACKET_RE, ' ')
     .replace(VERSION_SUFFIX_RE, ' ')
+    .replace(PROMO_SUFFIX_RE, ' ')
     .replace(/\s+/g, ' ')
     .trim()
   return normalizeText(cleaned)
+}
+
+export function cleanPromoSuffix(value: string): string {
+  const cleaned = (value || '')
+    .replace(PROMO_SUFFIX_RE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned || (value || '').trim()
 }
 
 export function titleKeys(value: string): string[] {
   const base = (value || '').trim()
   const withoutBrackets = base.replace(BRACKET_RE, ' ').trim()
   const withoutSuffix = base.replace(VERSION_SUFFIX_RE, ' ').trim()
-  return [...new Set([titleKey(base), titleKey(withoutBrackets), titleKey(withoutSuffix)].filter(Boolean))]
+  const withoutPromo = base.replace(PROMO_SUFFIX_RE, ' ').trim()
+  return [
+    ...new Set(
+      [
+        titleKey(base),
+        titleKey(withoutBrackets),
+        titleKey(withoutSuffix),
+        titleKey(withoutPromo),
+      ].filter(Boolean)
+    ),
+  ]
 }
 
 const ARTIST_SPLIT_RE =
   /\s*(?:\/|&|,|，|、|;|；|\+| feat\.?\s*| ft\.?\s*)\s*/i
+
+const ARTIST_ALIASES: Record<string, string> = {
+  valorant: '无畏契约',
+  '无畏契约': '无畏契约',
+  jjlin: '林俊杰',
+  jaychou: '周杰伦',
+  easonchan: '陈奕迅',
+  jolintsai: '蔡依林',
+  gem: '邓紫棋',
+  gem邓紫棋: '邓紫棋',
+}
+
+function artistKey(value: string): string {
+  const key = normalizeText(value)
+  return ARTIST_ALIASES[key] || key
+}
 
 export function artistKeys(value: string): string[] {
   return [
     ...new Set(
       (value || '')
         .split(ARTIST_SPLIT_RE)
-        .map((part) => normalizeText(part))
+        .map((part) => artistKey(part))
         .filter(Boolean)
     ),
   ]

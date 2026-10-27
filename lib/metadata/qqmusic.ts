@@ -1,5 +1,5 @@
 import { fetchJson, fetchText } from './http'
-import { toSimplified } from './normalize'
+import { cleanPromoSuffix, toSimplified } from './normalize'
 import type { MetadataCandidate, MetadataQuery } from './types'
 
 const QQ_HOSTS = ['https://c.y.qq.com', 'https://c6.y.qq.com', 'https://i.y.qq.com']
@@ -98,7 +98,7 @@ function buildCandidate(song: QqSong): MetadataCandidate | null {
   return {
     source: 'qqmusic',
     sourceLabel: 'QQ 音乐',
-    title: toSimplified(cleanSongName(rawTitle)),
+    title: cleanPromoSuffix(toSimplified(cleanSongName(rawTitle))),
     artist: toSimplified(artists.join(' / ')),
     artists: artists.map(toSimplified),
     album: toSimplified((song.albumname || '').trim()),
