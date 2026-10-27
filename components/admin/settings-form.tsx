@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowDown,
@@ -69,6 +69,12 @@ export function SettingsForm({
     initial.platformPriority || {}
   )
   const [sourceOrdersReady, setSourceOrdersReady] = useState(false)
+  const platformOrderRef = useRef<Platform[]>(
+    initial.platformOrder?.length ? initial.platformOrder : [...PLATFORMS]
+  )
+  const sourceOrdersRef = useRef<Record<string, string[]>>(
+    initial.platformPriority || {}
+  )
 
   useEffect(() => {
     fetch('/api/admin/sources', { cache: 'no-store' })
@@ -94,6 +100,7 @@ export function SettingsForm({
       next[platform] = [...saved, ...rest]
     }
     setSourceOrders(next)
+    sourceOrdersRef.current = next
     setSourceOrdersReady(true)
   }, [initial.platformPriority, sourceOrdersReady, sources])
 
@@ -110,8 +117,10 @@ export function SettingsForm({
           filenameTemplate: template,
           maxFileSizeMb: Number(maxSize),
           verifyWrongSong: verify,
-          platformOrder,
-          ...(sourceOrdersReady ? { platformPriority: sourceOrders } : {}),
+          platformOrder: platformOrderRef.current,
+          ...(Object.keys(sourceOrdersRef.current).length
+            ? { platformPriority: sourceOrdersRef.current }
+            : {}),
           aiEnabled,
           aiBaseUrl: aiBaseUrl.trim(),
           aiModel: aiModel.trim(),
@@ -204,12 +213,25 @@ export function SettingsForm({
       .sort((a, b) => a.priority - b.priority),
   ]
 
+  function movePlatform(index: number, delta: number) {
+    const next = moveItem(platformOrderRef.current, index, delta)
+    platformOrderRef.current = next
+    setPlatformOrder(next)
+  }
+
   function moveSource(index: number, delta: number) {
-    const ids = orderedSources.map((source) => source.id)
-    setSourceOrders((prev) => ({
-      ...prev,
-      [sourcePlatform]: moveItem(ids, index, delta),
-    }))
+    const saved = sourceOrdersRef.current[sourcePlatform] || []
+    const valid = saved.filter((id) => platformSources.some((source) => source.id === id))
+    const ids = [
+      ...valid,
+      ...platformSources
+        .map((source) => source.id)
+        .filter((id) => !valid.includes(id)),
+    ]
+    const next = moveItem(ids, index, delta)
+    const nextOrders = { ...sourceOrdersRef.current, [sourcePlatform]: next }
+    sourceOrdersRef.current = nextOrders
+    setSourceOrders(nextOrders)
     setSourceOrdersReady(true)
   }
 
@@ -415,7 +437,7 @@ export function SettingsForm({
                   </span>
                   <button
                     type="button"
-                    onClick={() => setPlatformOrder((prev) => moveItem(prev, index, -1))}
+                    onClick={() => movePlatform(index, -1)}
                     disabled={index === 0}
                     aria-label={`上移 ${PLATFORM_NAMES[platform]}`}
                     className="rounded p-1 text-white/30 hover:bg-white/[0.06] hover:text-white/70 disabled:pointer-events-none disabled:opacity-20"
@@ -424,7 +446,7 @@ export function SettingsForm({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPlatformOrder((prev) => moveItem(prev, index, 1))}
+                    onClick={() => movePlatform(index, 1)}
                     disabled={index === platformOrder.length - 1}
                     aria-label={`下移 ${PLATFORM_NAMES[platform]}`}
                     className="rounded p-1 text-white/30 hover:bg-white/[0.06] hover:text-white/70 disabled:pointer-events-none disabled:opacity-20"
