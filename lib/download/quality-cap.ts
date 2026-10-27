@@ -40,7 +40,11 @@ export function capQuality(
 ): string | null {
   const normalizedCap = normalizeQualityCap(cap)
   const requestedValue =
-    requested && requested !== 'auto' && requested in QUALITY_RANK ? requested : null
+    requested &&
+    requested !== 'auto' &&
+    Object.prototype.hasOwnProperty.call(QUALITY_RANK, requested)
+      ? requested
+      : null
 
   if (normalizedCap === 'auto') return requestedValue
 

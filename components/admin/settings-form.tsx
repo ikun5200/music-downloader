@@ -324,7 +324,7 @@ export function SettingsForm({
             <option value="strict">严格最高档，失败即报错</option>
           </Select>
           <p className="mt-1.5 text-[10.5px] leading-4 text-white/25">
-            自动模式会从母带/24bit 开始，逐档尝试；任何一个渠道能给出该档位就下载。
+            按音质档位从高到低尝试，实际最高档会再受下面的「最高下载音质」限制；严格模式失败即报错。
           </p>
 
           <label className="mt-4 block text-[11px] text-white/35">最高下载音质</label>
