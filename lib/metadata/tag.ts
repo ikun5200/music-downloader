@@ -322,11 +322,34 @@ export async function writeMetadataTags(
   }
 }
 
+export async function writeBasicTags(
+  filePath: string,
+  tags: { title?: string | null; artist?: string | null; album?: string | null }
+): Promise<MetadataWriteResult> {
+  const candidate: MetadataCandidate = {
+    source: 'itunes',
+    sourceLabel: '下载信息',
+    title: String(tags.title || '').trim(),
+    artist: String(tags.artist || '').trim(),
+    album: String(tags.album || '').trim(),
+    date: '',
+    genre: '',
+    score: 0,
+    acceptable: true,
+    variantFlags: 0,
+    reasons: [],
+  }
+  return writeMetadataTags(filePath, candidate, {
+    writeInfo: true,
+    writeCover: false,
+    writeLyrics: false,
+  })
+}
+
 export async function writeLyricsOnly(
   filePath: string,
   lyrics: string
-): Promise<MetadataWriteResult> {
-  const ext = path.extname(filePath).slice(1).toLowerCase()
+): Promise<MetadataWriteResult> {  const ext = path.extname(filePath).slice(1).toLowerCase()
   if (!ext) return { ok: false, partial: false, wrote: [], note: '无法识别文件扩展名' }
   const stat = await fs.stat(filePath)
   const output = path.join(

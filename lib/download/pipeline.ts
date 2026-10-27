@@ -15,6 +15,7 @@ import { actualQuality as deriveActualQuality, extensionFor } from './quality'
 import { capQuality } from './quality-cap'
 import { validateFile } from './validator'
 import { processMetadataForJob, type MetadataProcessResult } from '../metadata/process'
+import { writeBasicTags } from '../metadata/tag'
 
 const cancelControllers = new Map<string, AbortController>()
 const lastProgressAt = new Map<string, number>()
@@ -242,6 +243,20 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
             note: (error instanceof Error ? error.message : String(error)).slice(0, 1000),
           }
         }
+      }
+
+      // 刮削失败/未命中时，至少把下载任务里已知的歌名、歌手、专辑写进去，
+      // 避免源文件自带的 track 12 / album 之类占位标签被飞牛扫到。
+      if (
+        metadataResult &&
+        metadataResult.status !== 'success' &&
+        metadataResult.status !== 'partial'
+      ) {
+        await writeBasicTags(stagedFile, {
+          title: job.title,
+          artist: job.artist,
+          album: job.album,
+        }).catch(() => null)
       }
 
       const finalPath = await uniquePath(root, planned.relative)
