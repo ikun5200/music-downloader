@@ -108,16 +108,33 @@ export async function scrapeMetadata(
   const viable = scored.filter((candidate) => candidate.acceptable)
   const aiConfig =
     options.aiConfig?.enabled && options.aiConfig.apiKey ? options.aiConfig : null
-  // 只有一个可信候选时没必要花 AI 调用；多候选分数接近、或规则没有候选时才让 AI 复核。
+  // 只有全部可信候选都在同一条线上时，才让 AI 复核。
   const closeRace =
     viable.length > 1 && viable[0].score - viable[1].score < 20
   const needAi = viable.length === 0 || closeRace
 
-  let selected: MetadataCandidate | null = null
-  let aiUsed = false
-  let aiNote = ''
+  // 来源优先级：优先选最早来源里分数接近最高分的可信候选。
+  // 例如 iTunes 和 QQ 都是原版时直接选 iTunes；若 iTunes 只有翻唱/合集等低分候选，
+  // 分数差距超过 8 分就继续看后面的来源。
+  let preferred: MetadataCandidate | null = null
+  if (viable.length) {
+    for (const source of order) {
+      const sourceCandidates = viable.filter((candidate) => candidate.source === source)
+      if (!sourceCandidates.length) continue
+      if (sourceCandidates[0].score >= viable[0].score - 8) {
+        preferred = sourceCandidates[0]
+        break
+      }
+    }
+  }
 
-  if (aiConfig && needAi) {
+  let selected: MetadataCandidate | null = preferred
+  let aiUsed = false
+  let aiNote = preferred
+    ? `规则匹配（优先 ${preferred.sourceLabel}）：${preferred.reasons.join('，')}`
+    : ''
+
+  if (!selected && aiConfig && needAi) {
     const pool = viable.length ? viable.slice(0, 8) : scored.filter(isLooseMatch).slice(0, 8)
     if (pool.length) {
       try {
