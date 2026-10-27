@@ -20,6 +20,7 @@ const schema = z.object({
   aiBaseUrl: z.string().url().max(500).optional(),
   aiModel: z.string().min(1).max(200).optional(),
   aiApiKey: z.string().max(1000).optional(),
+  aiTitleCleanEnabled: z.boolean().optional(),
 })
 
 export async function GET() {

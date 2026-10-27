@@ -16,6 +16,7 @@ export interface AppSettings {
   aiBaseUrl: string
   aiModel: string
   aiApiKeySet: boolean
+  aiTitleCleanEnabled: boolean
 }
 
 export interface AiConfig {
@@ -23,6 +24,8 @@ export interface AiConfig {
   baseUrl: string
   model: string
   apiKey: string
+  /** 是否用 AI 清理歌名中的主题曲/推广曲等说明。 */
+  titleClean?: boolean
 }
 
 export interface SettingsPatch extends Partial<AppSettings> {
@@ -41,6 +44,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiBaseUrl: 'https://api.openai.com/v1',
   aiModel: 'gpt-4o-mini',
   aiApiKeySet: false,
+  aiTitleCleanEnabled: true,
 }
 
 export function normalizePlatformOrder(value: unknown): Platform[] {
@@ -98,12 +102,17 @@ function parseSettings(rows: { key: string; value: string }[]): AppSettings {
     aiBaseUrl: (pick('aiBaseUrl') || DEFAULT_SETTINGS.aiBaseUrl).replace(/\/+$/, ''),
     aiModel: pick('aiModel') || DEFAULT_SETTINGS.aiModel,
     aiApiKeySet: !!pick('aiApiKey'),
+    aiTitleCleanEnabled: (pick('aiTitleCleanEnabled') ?? 'true') !== 'false',
   }
 }
 
 export async function getAiConfig(): Promise<AiConfig> {
   const rows = await prisma.setting.findMany({
-    where: { key: { in: ['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiApiKey'] } },
+    where: {
+      key: {
+        in: ['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiApiKey', 'aiTitleCleanEnabled'],
+      },
+    },
   })
   const map = new Map(rows.map((row) => [row.key, row.value]))
   return {
@@ -111,6 +120,7 @@ export async function getAiConfig(): Promise<AiConfig> {
     baseUrl: (map.get('aiBaseUrl') || DEFAULT_SETTINGS.aiBaseUrl).replace(/\/+$/, ''),
     model: map.get('aiModel') || DEFAULT_SETTINGS.aiModel,
     apiKey: decryptSecret(map.get('aiApiKey')),
+    titleClean: (map.get('aiTitleCleanEnabled') ?? 'true') !== 'false',
   }
 }
 
@@ -157,6 +167,9 @@ export async function setSettings(values: SettingsPatch) {
   if (values.aiEnabled != null) entries.push(['aiEnabled', String(values.aiEnabled)])
   if (values.aiBaseUrl) entries.push(['aiBaseUrl', values.aiBaseUrl.replace(/\/+$/, '')])
   if (values.aiModel) entries.push(['aiModel', values.aiModel])
+  if (values.aiTitleCleanEnabled != null) {
+    entries.push(['aiTitleCleanEnabled', String(values.aiTitleCleanEnabled)])
+  }
   if (values.aiApiKey !== undefined && !/^[•*]+$/.test(values.aiApiKey)) {
     entries.push(['aiApiKey', values.aiApiKey ? encryptSecret(values.aiApiKey) : ''])
   }

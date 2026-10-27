@@ -57,6 +57,7 @@ export function SettingsForm({
   const [aiModel, setAiModel] = useState(initial.aiModel)
   const [aiApiKey, setAiApiKey] = useState('')
   const [keySet, setKeySet] = useState(initial.aiApiKeySet)
+  const [aiTitleClean, setAiTitleClean] = useState(initial.aiTitleCleanEnabled)
   const [testingAi, setTestingAi] = useState(false)
   const [clearingAi, setClearingAi] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -122,6 +123,7 @@ export function SettingsForm({
             ? { platformPriority: sourceOrdersRef.current }
             : {}),
           aiEnabled,
+          aiTitleCleanEnabled: aiTitleClean,
           aiBaseUrl: aiBaseUrl.trim(),
           aiModel: aiModel.trim(),
           ...(aiApiKey.trim() ? { aiApiKey: aiApiKey.trim() } : {}),
@@ -151,6 +153,7 @@ export function SettingsForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           aiEnabled,
+          aiTitleCleanEnabled: aiTitleClean,
           aiBaseUrl: aiBaseUrl.trim(),
           aiModel: aiModel.trim(),
           ...(aiApiKey.trim() ? { aiApiKey: aiApiKey.trim() } : {}),
@@ -349,6 +352,20 @@ export function SettingsForm({
           批量任务会先把候选歌曲按规则过滤（排除翻唱/伴奏/live/组曲/MV首播/改编），再让 AI
           从候选中选择原版。AI 未配置、超时或返回异常时自动回退规则排序。
         </p>
+
+        <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2.5">
+          <div className="min-w-0">
+            <div className="text-[11px] text-white/55">AI 自动清理歌名</div>
+            <div className="mt-0.5 text-[10px] leading-4 text-white/25">
+              自动去掉歌名里的“主题曲 / 片尾曲 / 推广曲 / OST”等说明，失败时保留原名。
+            </div>
+          </div>
+          <Switch
+            checked={aiTitleClean}
+            onChange={setAiTitleClean}
+            label="AI 自动清理歌名"
+          />
+        </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="block text-[11px] text-white/35">

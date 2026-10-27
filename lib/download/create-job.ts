@@ -2,6 +2,8 @@ import type { DownloadJob } from '@prisma/client'
 import { PLATFORM_NAMES, type Platform } from '../constants'
 import { prisma } from '../db'
 import { sourceManager } from '../sources/manager'
+import { getAiConfig } from '../settings'
+import { cleanSongTitle } from '../ai/title-clean'
 import { wakeQueue } from './queue'
 
 export interface CreateDownloadInput {
@@ -36,8 +38,11 @@ export async function createDownloadJob(input: CreateDownloadInput): Promise<Dow
   )
   if (!songId) throw new Error('缺少歌曲 ID')
 
-  const title = String(input.title || musicInfo.name || '未知歌曲').slice(0, 300)
   const artist = String(input.artist || musicInfo.singer || '未知歌手').slice(0, 300)
+  const originalTitle = String(input.title || musicInfo.name || '未知歌曲').slice(0, 300)
+  // AI 清理是可选的，失败时 cleanSongTitle 会原样返回。
+  const aiConfig = await getAiConfig().catch(() => null)
+  const title = await cleanSongTitle(originalTitle, artist, aiConfig)
   const album = input.album
     ? String(input.album).slice(0, 300)
     : musicInfo.albumName
