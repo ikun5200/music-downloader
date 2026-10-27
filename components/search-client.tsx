@@ -379,7 +379,7 @@ export function SearchClient() {
           </h1>
           <p className="mt-3 max-w-xl text-[13px] leading-6 text-white/45 sm:text-sm">
             搜索酷我、酷狗、QQ、网易云、咪咕，自动挑选可用渠道，按最高音质下载到 NAS。
-            文件会按歌手/专辑归档，下载过程可实时查看。
+            文件直接保存到下载目录，不再创建歌手/专辑子文件夹。
           </p>
 
           <form
@@ -855,7 +855,7 @@ export function SearchClient() {
           {[
             { title: '自动回退', desc: '高音质失败会自动尝试下一个渠道，直到拿到可用链接。', icon: Sparkles },
             { title: '真实验证', desc: '下载完成后用 ffprobe 校验编码、位深和时长，拦截错歌。', icon: Music2 },
-            { title: '归档保存', desc: '按歌手/专辑/歌曲命名，直接落在 NAS 的音乐目录。', icon: Download },
+            { title: '直接保存', desc: '按“歌手 - 歌曲”命名，直接落在 NAS 下载目录，不创建子文件夹。', icon: Download },
           ].map((item) => {
             const Icon = item.icon
             return (

@@ -11,8 +11,8 @@ services:
     ports:
       - "${APP_PORT:-3000}:3000"
     volumes:
-      # 宿主机音乐目录 -> 容器下载目录，按你的实际路径修改。
-      - "/vol1/1000/音乐:/downloads"
+      # 宿主机音乐下载目录 -> 容器下载目录，按你的实际路径修改。
+      - "/vol1/1000/音乐/downloads:/downloads"
       # SQLite、上传的音源脚本、临时文件。
       - "./data:/app/data"
     environment:
@@ -21,7 +21,7 @@ services:
       AUTH_SECRET: "${AUTH_SECRET:?请先复制 .env.example 为 .env 并设置 AUTH_SECRET}"
       DOWNLOAD_DIR: "/downloads"
       # 仅用于在界面展示宿主机真实路径，不参与容器内文件操作
-      HOST_DOWNLOAD_DIR: "${HOST_DOWNLOAD_DIR:-/vol1/1000/音乐}"
+      HOST_DOWNLOAD_DIR: "${HOST_DOWNLOAD_DIR:-/vol1/1000/音乐/downloads}"
       DATABASE_URL: "file:/app/data/app.db?connection_limit=1&socket_timeout=30"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://192.168.1.10:3000}"
       MAX_CONCURRENT_DOWNLOADS: "${MAX_CONCURRENT_DOWNLOADS:-2}"

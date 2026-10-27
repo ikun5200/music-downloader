@@ -46,15 +46,17 @@ export function buildRelativePath(parts: FilenameParts, template: string): strin
     ext: sanitizeFilename(parts.ext || 'audio', 10),
   }
 
-  const segments = template
-    .split('/')
-    .map((segment) =>
-      segment.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '').trim()
-    )
-    .filter((segment) => segment.length > 0)
+  // 下载结果统一放在根目录：模板里的 / 也不再作为目录分隔符。
+  const rendered = template
+    .replace(/[\\/]+/g, ' - ')
+    .replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '')
+    .replace(/(\s*-\s*){2,}/g, ' - ')
+    .trim()
 
-  let relative = segments.join(path.sep)
-  if (!relative) relative = `${values.artist} - ${values.title} [${values.quality}].${values.ext}`
+  let relative = sanitizeFilename(rendered, 220)
+  if (!relative || relative === '未命名') {
+    relative = `${values.artist} - ${values.title} [${values.quality}].${values.ext}`
+  }
   if (!relative.toLowerCase().endsWith(`.${values.ext.toLowerCase()}`)) {
     relative += `.${values.ext}`
   }

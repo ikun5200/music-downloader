@@ -43,7 +43,7 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=换成一个强密码
 AUTH_SECRET=用下面的命令生成
 PUBLIC_BASE_URL=http://你的NAS内网IP:3000
-HOST_DOWNLOAD_DIR=/vol1/1000/音乐
+HOST_DOWNLOAD_DIR=/vol1/1000/音乐/downloads
 PUID=1000
 PGID=1000
 ```
@@ -60,20 +60,20 @@ openssl rand -hex 32
 
 ```yaml
 volumes:
-  - "/vol1/1000/音乐:/downloads"
+  - "/vol1/1000/音乐/downloads:/downloads"
 ```
 
-飞牛 NAS 默认音乐目录通常是 `/vol1/1000/音乐`。容器内固定为 `/downloads`；`HOST_DOWNLOAD_DIR` 只用于在页面显示宿主机真实路径，请与 volumes 左侧保持一致。
+下载根目录是 `/vol1/1000/音乐/downloads`，容器内固定为 `/downloads`。文件会直接放在这个目录下，不再创建歌手/专辑子文件夹。`HOST_DOWNLOAD_DIR` 只用于在页面显示宿主机真实路径，请与 volumes 左侧保持一致。
 
 ### 2. 设置目录权限
 
 容器默认以 `node` 用户运行（UID/GID 默认 1000）。确保宿主机音乐目录对 `PUID:PGID` 可写：
 
 ```bash
-mkdir -p data
+mkdir -p data "/vol1/1000/音乐/downloads"
 sudo chown -R 1000:1000 data
-# 只改音乐目录本身的属主，避免递归修改整个音乐库
-sudo chown 1000:1000 "/vol1/1000/音乐"
+# 只改下载目录本身的属主，避免递归修改整个音乐库
+sudo chown 1000:1000 "/vol1/1000/音乐/downloads"
 ```
 
 如果你的 NAS 用户不是 1000，请把 `.env` 里的 `PUID` / `PGID` 改成 `id -u` / `id -g` 的结果。
@@ -161,7 +161,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 5. ffprobe 读取实际编码、位深、采样率、码率、时长。
 6. 校验标题/歌手/时长；可疑文件自动换渠道。
 7. 若实际音质低于当前档位，暂存为候选，继续尝试其他渠道和更低档位，最后取实际音质最高的候选；任务会标记 `downgraded` 并显示“请求 X，实际最高可用 Y”。
-8. 文件名默认：`歌手/专辑/歌曲 [实际音质].扩展名`；可在后台设置中修改模板。
+8. 文件名默认：`歌手 - 歌曲 [实际音质].扩展名`，直接放在下载根目录，不创建歌手/专辑子文件夹；模板中的 `/` 也会被转成横线。可在后台设置中修改模板。
 
 ## 批量下载与 AI 选版
 
@@ -307,7 +307,7 @@ music-downloader/
 
 不同渠道对同一首歌的可用音质不同。例如请求 FLAC，但所有渠道实际只返回 128k 时，任务会以 128k 完成并标记“已降级”，不会写入虚假的 FLAC 标签。可换平台或稍后重试。
 
-**文件没有出现在 `/vol1/1000/音乐`**
+**文件没有出现在 `/vol1/1000/音乐/downloads`**
 
 检查 compose 的 volumes 路径、`PUID/PGID` 和目录权限。容器内 `DOWNLOAD_DIR=/downloads`，实际落盘路径会显示在下载详情里。
 

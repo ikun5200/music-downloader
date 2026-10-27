@@ -32,7 +32,7 @@ export interface SettingsPatch extends Partial<AppSettings> {
 export const DEFAULT_SETTINGS: AppSettings = {
   qualityStrategy: 'highest',
   maxConcurrent: Number(process.env.MAX_CONCURRENT_DOWNLOADS || 2) || 2,
-  filenameTemplate: '{artist}/{album}/{title} [{quality}].{ext}',
+  filenameTemplate: '{artist} - {title} [{quality}].{ext}',
   maxFileSizeMb: 1024,
   verifyWrongSong: true,
   platformOrder: [...PLATFORMS],
