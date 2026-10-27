@@ -1,6 +1,11 @@
 import type { AiConfig } from '../settings'
 import { pickMetadataWithAi } from './ai'
-import { isLooseMatch, scoreCandidate } from './normalize'
+import {
+  isCompilationAlbum,
+  isLooseMatch,
+  isSyncedLyrics,
+  scoreCandidate,
+} from './normalize'
 import { getMetadataAdapter } from './sources'
 import { fetchKugouLyrics } from './kugou'
 import type {
@@ -43,6 +48,10 @@ function hasLyrics(candidate: MetadataCandidate): boolean {
   return !!candidate.lyrics?.trim()
 }
 
+function hasSyncedLyrics(candidate: MetadataCandidate): boolean {
+  return isSyncedLyrics(candidate.lyrics)
+}
+
 const SOURCE_COOLDOWN_MS = 10 * 60_000
 const sourceCooldown = new Map<MetadataSourceId, number>()
 
@@ -74,15 +83,23 @@ async function attachLyrics(
   notes: string[],
   fetched: Set<string>
 ): Promise<boolean> {
-  if (hasLyrics(target)) return true
-  if (hasLyrics(source)) {
-    target.lyrics = source.lyrics
+  if (hasSyncedLyrics(target)) return true
+  const targetHadLyrics = hasLyrics(target)
+
+  if (hasSyncedLyrics(source)) {
+    target.lyrics = source.lyrics!.trim()
     notes.push(`歌词来自 ${source.sourceLabel}`)
     return true
   }
-  if (!adapter.supportsLyrics) return false
+
+  if (!targetHadLyrics && hasLyrics(source)) {
+    target.lyrics = source.lyrics!.trim()
+    notes.push(`歌词来自 ${source.sourceLabel}（纯文本，继续查找带时间轴版本）`)
+  }
+
+  if (!adapter.supportsLyrics) return hasSyncedLyrics(target)
   const key = `${source.source}:${source.songId || source.title}`
-  if (fetched.has(key)) return false
+  if (fetched.has(key)) return hasSyncedLyrics(target)
   fetched.add(key)
   try {
     let lyrics = ''
@@ -91,15 +108,21 @@ async function attachLyrics(
       await adapter.enrich(source)
       lyrics = source.lyrics || ''
     }
-    if (lyrics?.trim()) {
-      target.lyrics = lyrics
-      notes.push(`歌词来自 ${source.sourceLabel}`)
-      return true
+    const trimmed = lyrics.trim()
+    if (!trimmed) return hasSyncedLyrics(target)
+    const synced = isSyncedLyrics(trimmed)
+    // 已经拿到带时间轴的歌词不降级；纯文本只在还没有歌词时兜底。
+    if (!hasLyrics(target) || synced) {
+      target.lyrics = trimmed
+      notes.push(
+        `歌词来自 ${source.sourceLabel}${synced ? '' : '（纯文本）'}`
+      )
     }
+    return synced
   } catch {
     // 单个源歌词失败不影响其他源
   }
-  return false
+  return hasSyncedLyrics(target)
 }
 
 async function enrichCandidate(
@@ -171,10 +194,32 @@ export async function scrapeMetadata(
     const viable = sortCandidates(scored.filter((candidate) => candidate.acceptable))
     if (!viable.length) continue
 
+    const best = viable.find(
+      (candidate) => !isCompilationAlbum(candidate.album)
+    ) || viable[0]
+
     if (!preferred) {
-      preferred = viable[0]
+      preferred = best
       await enrichCandidate(preferred, adapter)
       preferredEnriched = true
+    } else if (
+      isCompilationAlbum(preferred.album) &&
+      !isCompilationAlbum(best.album) &&
+      (best.titleScore || 0) >= 0.99
+    ) {
+      // 先命中的来源可能只有精选集；后续来源找到正式专辑时改用后者。
+      const previous = preferred
+      preferred = best
+      await enrichCandidate(preferred, adapter)
+      preferredEnriched = true
+      if (!hasCover(preferred) && hasCover(previous)) {
+        attachCover(preferred, previous, notes)
+      }
+      if (!hasSyncedLyrics(preferred) && hasLyrics(previous)) {
+        preferred.lyrics = previous.lyrics
+        notes.push(`歌词来自 ${previous.sourceLabel}`)
+      }
+      notes.push(`已改用正式专辑「${best.album}」`)
     }
 
     // 当前来源只负责补 preferred 缺失的封面/歌词，不改变已确定的来源优先级。
@@ -189,12 +234,19 @@ export async function scrapeMetadata(
       }
     }
 
-    if (!hasLyrics(preferred)) {
-      const candidate = viable.find((item) => hasLyrics(item)) || viable[0]
+    if (!hasSyncedLyrics(preferred)) {
+      const withSynced = viable.find((item) => hasSyncedLyrics(item))
+      const candidate = withSynced || viable.find((item) => hasLyrics(item)) || viable[0]
       await attachLyrics(preferred, candidate, adapter, notes, fetchedLyrics)
     }
 
-    if (hasCover(preferred) && hasLyrics(preferred)) break
+    if (
+      hasCover(preferred) &&
+      hasSyncedLyrics(preferred) &&
+      !isCompilationAlbum(preferred.album)
+    ) {
+      break
+    }
   }
 
   let aiUsed = false
@@ -248,23 +300,30 @@ export async function scrapeMetadata(
     await enrichCandidate(preferred, preferredAdapter)
   }
 
-  // 用其余已检索到的可信候选补歌词/封面；仍然没有就用酷狗/LRCLIB 直接兜底。
-  if (!hasLyrics(preferred)) {
+  // 用其余已检索到的可信候选补歌词/封面；仍然没有就用酷狗直接兜底。
+  // 已经拿到纯文本时继续找带时间轴版本，避免飞牛音乐只能显示、不能滚动。
+  if (!hasSyncedLyrics(preferred)) {
     for (const candidate of sortCandidates(all)) {
-      if (!candidate.acceptable || hasLyrics(preferred)) continue
+      if (!candidate.acceptable || hasSyncedLyrics(preferred)) continue
       const adapter = getMetadataAdapter(candidate.source)
       await attachLyrics(preferred, candidate, adapter, notes, fetchedLyrics)
     }
   }
-  if (!hasLyrics(preferred)) {
+  if (!hasSyncedLyrics(preferred)) {
     const lyrics = await fetchKugouLyrics(
       query.title,
       query.artist,
       query.duration || undefined
     ).catch(() => '')
-    if (lyrics) {
-      preferred.lyrics = lyrics
-      notes.push('歌词来自 酷狗音乐（兜底）')
+    const trimmed = lyrics.trim()
+    if (trimmed) {
+      const synced = isSyncedLyrics(trimmed)
+      if (!hasLyrics(preferred) || synced) {
+        preferred.lyrics = trimmed
+        notes.push(
+          `歌词来自 酷狗音乐（兜底${synced ? '' : '，纯文本'}）`
+        )
+      }
     }
   }
   if (!hasCover(preferred)) {
@@ -272,6 +331,20 @@ export async function scrapeMetadata(
       if (!candidate.acceptable || hasCover(preferred)) continue
       attachCover(preferred, candidate, notes)
     }
+  }
+
+  // 精选集的专辑名和曲目号通常是重新编排的，写进文件后会再次误导播放器。
+  if (isCompilationAlbum(preferred.album)) {
+    notes.push(`候选专辑「${preferred.album}」属于精选/合集，已忽略专辑和曲目号`)
+    preferred.album = ''
+    preferred.albumId = undefined
+    preferred.albumArtist = undefined
+    preferred.track = undefined
+    preferred.trackTotal = undefined
+    preferred.disc = undefined
+  }
+  if (hasLyrics(preferred) && !hasSyncedLyrics(preferred)) {
+    notes.push('只找到纯文本歌词，播放器可能无法自动滚动')
   }
 
   notes.push(`匹配来源：${preferred.sourceLabel}`)

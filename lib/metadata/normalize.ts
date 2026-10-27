@@ -12,6 +12,20 @@ const PROMO_SUFFIX_RE =
 const VERSION_SUFFIX_RE =
   /\s*[-—–]\s*(?:铃声|伴奏|remix|mix|live|现场|演唱会|纯音乐|翻唱|cover|instrumental|acoustic|dj|慢摇|加快|加速|变调|降调|升调|串烧|伴奏版|纯音乐版|独白版|mv版|片段|剪辑|女声版|男声版|童声|钢琴版|吉他版|弹唱版|纯享版|深情版|治愈版|温柔版|烟嗓版|环绕版|广场舞|车载|demo|试听|抢听|预告|改编)[版曲]?\s*$/i
 
+// 精选/合集类专辑的曲目号和封面经常被重新编排，不能拿来当原版专辑信息。
+// “概念自选辑”这类正式发行专辑不算合集。
+const COMPILATION_RE =
+  /(精选|作品精选|作品集|合集|合辑|纪念专辑|珍藏|典藏|套装|新歌\+|金曲|全记录|历年|greatest\s*hits|best\s*of|collection|anthology|compilation|box\s*set)/i
+
+export function isCompilationAlbum(value: string | null | undefined): boolean {
+  const text = toSimplified(String(value || '')).trim()
+  return !!text && COMPILATION_RE.test(text)
+}
+
+export function isSyncedLyrics(value: string | null | undefined): boolean {
+  return /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/.test(String(value || ''))
+}
+
 export function toSimplified(value: string): string {
   if (!value) return ''
   try {
@@ -145,6 +159,12 @@ function matchAlbum(want: string | null | undefined, got: string): number {
   const b = titleKey(got || '')
   if (!a || !b) return 0
   if (a === b) return 1
+  const wantCompilation = isCompilationAlbum(want)
+  const gotCompilation = isCompilationAlbum(got)
+  // 查询来自精选集时，后续来源给出的正式专辑才是更有价值的原版信息。
+  if (wantCompilation && !gotCompilation) return 0.75
+  // 候选是精选集、查询不是时，专辑信息不可信，避免它靠来源优先级胜出。
+  if (!wantCompilation && gotCompilation) return 0.15
   return Math.min(a.length, b.length) >= 3 && (a.includes(b) || b.includes(a)) ? 0.6 : 0
 }
 
@@ -179,6 +199,7 @@ export function scoreCandidate(
   const durScore = durationScore(query.duration, candidate.duration)
   const albumScore = matchAlbum(query.album, candidate.album)
   const variantFlags = countVariantFlags(rawTitle)
+  const albumIsCompilation = isCompilationAlbum(candidate.album)
 
   const reasons: string[] = []
   if (titleScore >= 0.99) reasons.push('歌名完全一致')
@@ -192,16 +213,19 @@ export function scoreCandidate(
   }
   if (albumScore > 0) reasons.push('专辑一致')
   else if (query.album && candidate.album) reasons.push('专辑不一致')
+  if (albumIsCompilation) reasons.push('合集/精选专辑')
   if (variantFlags > 0) reasons.push('含版本标记')
 
   const albumMismatch = query.album && candidate.album && albumScore < 0.5 ? 12 : 0
+  const compilationPenalty = albumIsCompilation ? 30 : 0
   const base =
     titleScore * 50 +
     artistScore * 30 +
     durScore * 15 +
     albumScore * 5 +
     sourceBonus(candidate.source, order) -
-    albumMismatch
+    albumMismatch -
+    compilationPenalty
   const score = Math.round((base - Math.min(variantFlags, 3) * 20) * 10) / 10
 
   const durationOk = !query.duration || !candidate.duration || durScore >= 0.35

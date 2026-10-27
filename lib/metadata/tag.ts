@@ -95,7 +95,9 @@ function buildMetadataArgs(
       ['language', tagValue(candidate.language)],
     ]
     for (const [key, value] of tags) {
-      if (value) args.push('-metadata', `${key}=${value}`)
+      // 空值也显式写入，借助 -map_metadata 0 覆盖同名的旧标签；
+      // 否则从精选集改回正式专辑时，旧专辑名/曲目号会残留在文件里。
+      args.push('-metadata', `${key}=${value ?? ''}`)
     }
   }
   if (options.writeLyrics) {

@@ -1,4 +1,5 @@
 import { chatCompletion, extractJsonObject } from '../ai/client'
+import { isCompilationAlbum } from './normalize'
 import type { AiConfig } from '../settings'
 import type { MetadataCandidate, MetadataQuery, MetadataSourceId } from './types'
 
@@ -33,6 +34,7 @@ export async function pickMetadataWithAi(
       title: candidate.title,
       artist: candidate.artist,
       album: candidate.album,
+      albumIsCompilation: isCompilationAlbum(candidate.album),
       date: candidate.date,
       duration: candidate.duration || null,
       variantFlags: candidate.variantFlags,
@@ -50,6 +52,8 @@ export async function pickMetadataWithAi(
           '你是音乐元数据匹配助手。根据下载的歌曲信息，从候选中选择同一首录音室原版。' +
           '必须排除翻唱、live/现场、remix、伴奏、纯音乐、DJ、片段、MV版、铃声等版本；' +
           '简体/繁体差异可以接受。选择顺序：先保证是同一首原版；如果有多个候选都正确，' +
+          '优先选择正式录音室专辑，专辑名含精选、合集、作品集、Greatest Hits、Collection 等' +
+          '通常是重新编排的合集，只有没有正式专辑候选时才选；' +
           '选择 sourcePriority 更靠前的来源（例如 iTunes 在 QQ 音乐前面时优先 iTunes），' +
           '不要因为 1-2 秒的时长差就改选后面的来源；只有靠前来源是翻唱/变体/错误歌曲时，' +
           '才选后面的来源。如果候选里没有可信的原版，返回 index=-1。只返回 JSON，不要解释。',
