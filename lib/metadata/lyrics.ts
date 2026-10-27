@@ -14,6 +14,7 @@ interface ParsedLine {
   kind: 'lyric' | 'tag' | 'text'
   text: string
   offsetTag?: boolean
+  keepOffset?: boolean
 }
 
 const TIMESTAMP_PREFIX_RE =
@@ -207,11 +208,16 @@ function parseLine(raw: string): ParsedLine {
   }
   const tag = raw.match(TAG_ONLY_RE)
   if (tag) {
+    const isOffset = tag[1].toLowerCase() === 'offset'
+    const offsetValue = isOffset
+      ? Number((raw.match(/\[\s*offset\s*:\s*(-?\d+)\s*\]/i) || [])[1] || 0)
+      : 0
     return {
       raw,
       kind: 'tag',
       text: '',
-      offsetTag: tag[1].toLowerCase() === 'offset',
+      offsetTag: isOffset,
+      keepOffset: isOffset && offsetValue !== 0,
     }
   }
   return { raw, kind: 'text', text: raw.trim() }
@@ -327,8 +333,8 @@ export function cleanLyrics(
   for (let index = 0; index < parsed.length; index++) {
     const line = parsed[index]
     if (line.kind === 'tag') {
-      // offset 会影响时间轴；其余 [ti:]/[ar:]/[kuwo:] 等只增加噪音。
-      if (line.offsetTag) output.push(line.raw)
+      // [offset:0] 是纯噪音；非 0 偏移会影响时间轴，保留。
+      if (line.keepOffset) output.push(line.raw)
       continue
     }
     if (index < start) continue

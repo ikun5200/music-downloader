@@ -92,6 +92,12 @@ describe('cleanLyrics', () => {
     expect(cleaned).toBe('[00:17.23][01:53.21]泪 有点咸 有点甜')
   })
 
+  it('去掉无意义的 offset:0 标签', () => {
+    const raw = ['[offset:0]', '[00:01.00] 作词 : 某人', '[00:10.00]第一句'].join('\n')
+    const cleaned = cleanLyrics(raw, { title: '测试', artist: '歌手' })
+    expect(cleaned).toBe('[00:10.00]第一句')
+  })
+
   it('保留 offset 标签，避免时间轴偏移', () => {
     const raw = ['[offset:-500]', '[00:01.00] 作词 : 某人', '[00:10.00]第一句'].join('\n')
     const cleaned = cleanLyrics(raw, { title: '测试', artist: '歌手' })
