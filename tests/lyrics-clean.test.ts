@@ -45,9 +45,12 @@ describe('cleanLyrics', () => {
     const raw = [
       '[00:29.36] 故事的小黃花',
       '[00:32.77] 從出生那年就飄著',
+      '[00:56.57] 為妳翹課的那一天',
     ].join('\n')
     const cleaned = cleanLyrics(raw, { title: '晴天', artist: '周杰伦' })
-    expect(cleaned).toBe('[00:29.36]故事的小黄花\n[00:32.77]从出生那年就飘着')
+    expect(cleaned).toBe(
+      '[00:29.36]故事的小黄花\n[00:32.77]从出生那年就飘着\n[00:56.57]为你翘课的那一天'
+    )
   })
 
   it('清理尾部的制作人员和分隔线', () => {

@@ -50,6 +50,11 @@ export function toSimplified(value: string): string {
   if (!value) return ''
   try {
     return t2s(value)
+      // OpenCC 的 tw→cn 会保留部分人称/动物代词，歌词里很常见，手动补齐。
+      .replace(/妳/g, '你')
+      .replace(/祢/g, '你')
+      .replace(/牠/g, '它')
+      .replace(/祂/g, '他')
   } catch {
     return value
   }
