@@ -14,7 +14,7 @@ import { probeAudio } from './probe'
 import { actualQuality as deriveActualQuality, extensionFor } from './quality'
 import { capQuality } from './quality-cap'
 import { validateFile } from './validator'
-import { wakeMetadataQueue } from '../metadata/queue'
+import { processMetadataForJob, type MetadataProcessResult } from '../metadata/process'
 
 const cancelControllers = new Map<string, AbortController>()
 const lastProgressAt = new Map<string, number>()
@@ -222,8 +222,30 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
         },
         settings.filenameTemplate
       )
-      const finalPath = await uniquePath(root, relative)
-      await moveIntoPlace(candidate.tempFile, finalPath.absolute)
+      const planned = await uniquePath(root, relative)
+      // 关键：先在 /app/data/tmp（飞牛音乐不会扫描的目录）里写标签/封面/歌词，
+      // 全部完成后再原子移动到 /downloads，避免飞牛先扫到 track 12 / album 这种空标签。
+      let stagedFile = candidate.tempFile
+      let metadataResult: MetadataProcessResult | null = null
+      if (settings.metadataScrapeEnabled) {
+        const stagedPath = path.join(
+          temp,
+          `${job.id}-${Date.now()}${path.extname(planned.relative)}`
+        )
+        await fs.rename(candidate.tempFile, stagedPath)
+        stagedFile = stagedPath
+        try {
+          metadataResult = await processMetadataForJob(job, stagedFile, settings)
+        } catch (error) {
+          metadataResult = {
+            status: 'failed',
+            note: (error instanceof Error ? error.message : String(error)).slice(0, 1000),
+          }
+        }
+      }
+
+      const finalPath = await uniquePath(root, planned.relative)
+      await moveIntoPlace(stagedFile, finalPath.absolute)
       fallback = null
 
       await updateJob(job.id, {
@@ -242,18 +264,15 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
           : candidate.validation.reviewNote || null,
         attempts: JSON.stringify(attempts.slice(-30)),
         error: null,
-        metadataStatus: settings.metadataScrapeEnabled ? 'pending' : 'disabled',
-        metadataSource: null,
-        metadataTitle: null,
-        metadataArtist: null,
-        metadataAlbum: null,
-        metadataNote: settings.metadataScrapeEnabled
-          ? '等待下载后自动刮削'
-          : '下载后自动刮削未开启',
-        metadataAt: null,
+        metadataStatus: metadataResult?.status || 'disabled',
+        metadataSource: metadataResult?.source || null,
+        metadataTitle: metadataResult?.title || null,
+        metadataArtist: metadataResult?.artist || null,
+        metadataAlbum: metadataResult?.album || null,
+        metadataNote: metadataResult?.note || '下载后自动刮削未开启',
+        metadataAt: metadataResult ? new Date() : null,
         finishedAt: new Date(),
       })
-      if (settings.metadataScrapeEnabled) wakeMetadataQueue()
       await recordStat(candidate.channel.id, platform, true, Date.now() - candidate.startedAt)
     }
 

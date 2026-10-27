@@ -1,12 +1,9 @@
-import fs from 'fs/promises'
 import path from 'path'
 import type { DownloadJob } from '@prisma/client'
 import { prisma, withDbRetry } from '../db'
 import { resolveDownloadRoot } from '../download/filename'
-import { getAiConfig, getSettings } from '../settings'
-import { safeJson } from '../utils'
-import { scrapeMetadata } from './scrape'
-import { writeMetadataTags } from './tag'
+import { getSettings } from '../settings'
+import { processMetadataForJob } from './process'
 
 interface MetadataQueueState {
   started: boolean
@@ -52,16 +49,6 @@ async function claimJob(): Promise<DownloadJob | null> {
 }
 
 async function processJob(job: DownloadJob): Promise<void> {
-  const settings = await getSettings()
-  if (!settings.metadataScrapeEnabled) {
-    await updateJob(job.id, {
-      metadataStatus: 'disabled',
-      metadataNote: '下载后自动刮削已关闭',
-      metadataAt: new Date(),
-    })
-    return
-  }
-
   if (!job.filePath) {
     await updateJob(job.id, {
       metadataStatus: 'failed',
@@ -71,75 +58,18 @@ async function processJob(job: DownloadJob): Promise<void> {
     return
   }
 
+  const settings = await getSettings()
   const absolutePath = path.join(resolveDownloadRoot(), job.filePath)
-  try {
-    await fs.access(absolutePath)
-  } catch {
-    await updateJob(job.id, {
-      metadataStatus: 'failed',
-      metadataNote: '文件不存在，无法写入元数据',
-      metadataAt: new Date(),
-    })
-    return
-  }
-
-  const musicInfo = safeJson<Record<string, unknown>>(job.musicInfo, {})
-  const duration = Number(musicInfo.interval)
-
-  try {
-    const aiConfig = await getAiConfig().catch(() => null)
-    const aiEnabled = !!(
-      settings.metadataAiEnabled &&
-      aiConfig?.enabled &&
-      aiConfig.apiKey
-    )
-
-    const result = await scrapeMetadata({
-      query: {
-        title: job.title,
-        artist: job.artist,
-        album: job.album,
-        duration: Number.isFinite(duration) && duration > 0 ? duration : null,
-      },
-      sourceOrder: settings.metadataSourceOrder,
-      aiConfig: aiEnabled ? aiConfig : null,
-    })
-
-    if (result.status !== 'success' || !result.candidate) {
-      await updateJob(job.id, {
-        metadataStatus: result.status === 'not_found' ? 'not_found' : 'failed',
-        metadataNote: (result.note || '没有找到可信的原版元数据').slice(0, 1000),
-        metadataAt: new Date(),
-      })
-      return
-    }
-
-    const candidate = result.candidate
-    const written = await writeMetadataTags(absolutePath, candidate, {
-      writeInfo: settings.metadataWriteInfo,
-      writeCover: settings.metadataWriteCover,
-      writeLyrics: settings.metadataWriteLyrics,
-      lyricsCleanCredits: settings.lyricsCleanCredits,
-      lyricsSimplify: settings.lyricsSimplify,
-    })
-
-    const note = [result.note, written.note].filter(Boolean).join('；').slice(0, 1000)
-    await updateJob(job.id, {
-      metadataStatus: written.ok ? 'success' : written.partial ? 'partial' : 'failed',
-      metadataSource: candidate.source,
-      metadataTitle: candidate.title || null,
-      metadataArtist: candidate.artist || null,
-      metadataAlbum: candidate.album || null,
-      metadataNote: note,
-      metadataAt: new Date(),
-    })
-  } catch (error) {
-    await updateJob(job.id, {
-      metadataStatus: 'failed',
-      metadataNote: (error instanceof Error ? error.message : String(error)).slice(0, 1000),
-      metadataAt: new Date(),
-    })
-  }
+  const result = await processMetadataForJob(job, absolutePath, settings)
+  await updateJob(job.id, {
+    metadataStatus: result.status,
+    metadataSource: result.source || null,
+    metadataTitle: result.title || null,
+    metadataArtist: result.artist || null,
+    metadataAlbum: result.album || null,
+    metadataNote: result.note,
+    metadataAt: new Date(),
+  })
 }
 
 async function tick() {
