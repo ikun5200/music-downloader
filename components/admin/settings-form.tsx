@@ -302,7 +302,7 @@ export function SettingsForm({
             onChange={(e) => setTemplate(e.target.value)}
           />
           <p className="mt-1.5 text-[10.5px] leading-4 text-white/25">
-            可用变量：{'{artist}'} {'{album}'} {'{title}'} {'{quality}'} {'{ext}'}；下载文件直接放在根目录，模板里的 / 会转成横线，不会创建子文件夹。
+            默认 `{'{title}'}.{'{ext}'}`，只保留歌曲名和格式；可用变量：{'{artist}'} {'{album}'} {'{title}'} {'{quality}'} {'{ext}'}。下载文件直接放在根目录，不会创建子文件夹。
           </p>
 
           <label className="mt-4 block text-[11px] text-white/35">单文件大小上限（MB）</label>

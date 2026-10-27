@@ -855,7 +855,7 @@ export function SearchClient() {
           {[
             { title: '自动回退', desc: '高音质失败会自动尝试下一个渠道，直到拿到可用链接。', icon: Sparkles },
             { title: '真实验证', desc: '下载完成后用 ffprobe 校验编码、位深和时长，拦截错歌。', icon: Music2 },
-            { title: '直接保存', desc: '按“歌手 - 歌曲”命名，直接落在 NAS 下载目录，不创建子文件夹。', icon: Download },
+            { title: '直接保存', desc: '按“歌曲名.格式”命名，直接落在 NAS 下载目录，不创建子文件夹。', icon: Download },
           ].map((item) => {
             const Icon = item.icon
             return (
