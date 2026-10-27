@@ -2,8 +2,9 @@ import type { DownloadJob } from '@prisma/client'
 import { PLATFORM_NAMES, type Platform } from '../constants'
 import { prisma } from '../db'
 import { sourceManager } from '../sources/manager'
-import { getAiConfig } from '../settings'
+import { getAiConfig, getSettings } from '../settings'
 import { cleanSongTitle } from '../ai/title-clean'
+import { capQuality } from './quality-cap'
 import { wakeQueue } from './queue'
 
 export interface CreateDownloadInput {
@@ -29,8 +30,14 @@ export async function createDownloadJob(input: CreateDownloadInput): Promise<Dow
   for (const channel of channels) {
     for (const quality of channel.qualities[platform] || []) qualities.add(quality)
   }
+
+  const settings = await getSettings()
+  const requestedQuality = capQuality(input.quality, settings.maxQuality)
   if (input.quality && input.quality !== 'auto' && !qualities.has(input.quality)) {
-    throw new Error(`该平台不支持音质 ${input.quality}`)
+    // 后台上限把请求截断时允许降级；没有截断则说明用户明确选了一个平台不支持的档位。
+    if (requestedQuality === input.quality) {
+      throw new Error(`该平台不支持音质 ${input.quality}`)
+    }
   }
 
   const songId = String(
@@ -58,8 +65,7 @@ export async function createDownloadJob(input: CreateDownloadInput): Promise<Dow
       album,
       coverUrl: input.coverUrl || null,
       musicInfo: JSON.stringify(musicInfo),
-      requestedQuality:
-        input.quality && input.quality !== 'auto' ? input.quality : null,
+      requestedQuality,
       status: 'queued',
     },
   })

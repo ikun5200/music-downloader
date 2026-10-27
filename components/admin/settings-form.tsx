@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { PLATFORMS, PLATFORM_NAMES, type Platform } from '@/lib/constants'
+import { QUALITY_CAP_LABELS, QUALITY_CAPS, type QualityCap } from '@/lib/download/quality-cap'
 import { cn } from '@/lib/utils'
 import type { AppSettings, QualityStrategy } from '@/lib/settings'
 import type { MetadataSourceId } from '@/lib/metadata/types'
@@ -56,6 +57,7 @@ export function SettingsForm({
   publicBaseUrl: string
 }) {
   const [strategy, setStrategy] = useState<QualityStrategy>(initial.qualityStrategy)
+  const [maxQuality, setMaxQuality] = useState<QualityCap>(initial.maxQuality)
   const [maxConcurrent, setMaxConcurrent] = useState(String(initial.maxConcurrent))
   const [template, setTemplate] = useState(initial.filenameTemplate)
   const [maxSize, setMaxSize] = useState(String(initial.maxFileSizeMb))
@@ -133,6 +135,7 @@ export function SettingsForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           qualityStrategy: strategy,
+          maxQuality,
           maxConcurrent: Number(maxConcurrent),
           filenameTemplate: template,
           maxFileSizeMb: Number(maxSize),
@@ -322,6 +325,23 @@ export function SettingsForm({
           </Select>
           <p className="mt-1.5 text-[10.5px] leading-4 text-white/25">
             自动模式会从母带/24bit 开始，逐档尝试；任何一个渠道能给出该档位就下载。
+          </p>
+
+          <label className="mt-4 block text-[11px] text-white/35">最高下载音质</label>
+          <Select
+            className="mt-1.5 w-full"
+            value={maxQuality}
+            onChange={(e) => setMaxQuality(e.target.value as QualityCap)}
+          >
+            {QUALITY_CAPS.map((quality) => (
+              <option key={quality} value={quality}>
+                {QUALITY_CAP_LABELS[quality]}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1.5 text-[10.5px] leading-4 text-white/25">
+            全局上限：单次下载选更低音质时按更低的来，选更高时会被这里截断。想避免
+            24bit/192kHz 大文件，选「FLAC（CD 级）」即可。
           </p>
 
           <label className="mt-4 block text-[11px] text-white/35">最大并发下载数</label>

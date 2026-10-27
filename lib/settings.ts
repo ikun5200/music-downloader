@@ -2,11 +2,13 @@ import { prisma } from './db'
 import { decryptSecret, encryptSecret } from './secrets'
 import { PLATFORMS, type Platform } from './constants'
 import type { MetadataSourceId } from './metadata/types'
+import { normalizeQualityCap, type QualityCap } from './download/quality-cap'
 
 export type QualityStrategy = 'highest' | 'strict' | 'flacFirst'
 
 export interface AppSettings {
   qualityStrategy: QualityStrategy
+  maxQuality: QualityCap
   maxConcurrent: number
   filenameTemplate: string
   maxFileSizeMb: number
@@ -41,6 +43,7 @@ export interface SettingsPatch extends Partial<AppSettings> {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   qualityStrategy: 'highest',
+  maxQuality: 'auto',
   maxConcurrent: Number(process.env.MAX_CONCURRENT_DOWNLOADS || 2) || 2,
   filenameTemplate: '{title}.{ext}',
   maxFileSizeMb: 1024,
@@ -128,6 +131,7 @@ function parseSettings(rows: { key: string; value: string }[]): AppSettings {
       strategy === 'strict' || strategy === 'flacFirst' || strategy === 'highest'
         ? strategy
         : DEFAULT_SETTINGS.qualityStrategy,
+    maxQuality: normalizeQualityCap(pick('maxQuality')),
     maxConcurrent: Math.max(
       1,
       Math.min(8, Number(pick('maxConcurrent') || DEFAULT_SETTINGS.maxConcurrent) || 2)
@@ -202,6 +206,7 @@ export async function setSetting(key: string, value: string) {
 export async function setSettings(values: SettingsPatch) {
   const entries: [string, string][] = []
   if (values.qualityStrategy) entries.push(['qualityStrategy', values.qualityStrategy])
+  if (values.maxQuality) entries.push(['maxQuality', normalizeQualityCap(values.maxQuality)])
   if (values.maxConcurrent != null) entries.push(['maxConcurrent', String(values.maxConcurrent)])
   if (values.filenameTemplate) entries.push(['filenameTemplate', values.filenameTemplate])
   if (values.maxFileSizeMb != null) entries.push(['maxFileSizeMb', String(values.maxFileSizeMb)])

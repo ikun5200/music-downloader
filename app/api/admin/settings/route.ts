@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { isAdmin } from '@/lib/auth'
 import { getQueueState } from '@/lib/download/queue'
+import { QUALITY_CAPS } from '@/lib/download/quality-cap'
 import { getDisplayDownloadDir, getPublicBaseUrl, getSettings, setSettings } from '@/lib/settings'
 import { ensureRuntime } from '@/lib/runtime'
 
@@ -10,6 +11,7 @@ export const dynamic = 'force-dynamic'
 
 const schema = z.object({
   qualityStrategy: z.enum(['highest', 'strict', 'flacFirst']).optional(),
+  maxQuality: z.enum(QUALITY_CAPS).optional(),
   maxConcurrent: z.number().int().min(1).max(8).optional(),
   filenameTemplate: z.string().min(1).max(200).optional(),
   maxFileSizeMb: z.number().int().min(64).max(4096).optional(),

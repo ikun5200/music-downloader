@@ -12,6 +12,7 @@ import { downloadFile } from './downloader'
 import { buildRelativePath, ensureDownloadDirs, uniquePath } from './filename'
 import { probeAudio } from './probe'
 import { actualQuality as deriveActualQuality, extensionFor } from './quality'
+import { capQuality } from './quality-cap'
 import { validateFile } from './validator'
 import { wakeMetadataQueue } from '../metadata/queue'
 
@@ -141,6 +142,10 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
     const settings = await getSettings()
     const platform = job.platform as Platform
     const musicInfo = safeJson<Record<string, unknown>>(job.musicInfo, {})
+    const requestedQuality = capQuality(job.requestedQuality, settings.maxQuality)
+    if ((job.requestedQuality || null) !== requestedQuality) {
+      await updateJob(job.id, { requestedQuality })
+    }
 
     const channels = await getRankedChannels(platform)
     if (!channels.length) throw new Error(`平台 ${PLATFORM_NAMES[platform] || platform} 没有可用渠道`)
@@ -148,7 +153,7 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
     const qualities = candidateQualities(
       channels,
       platform,
-      job.requestedQuality,
+      requestedQuality,
       settings.qualityStrategy
     )
     if (!qualities.length) throw new Error('没有可用的音质档位')
@@ -202,7 +207,7 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
 
     const completeWith = async (candidate: FallbackCandidate) => {
       const actualRank = QUALITY_RANK[candidate.validation.actualQuality] || 0
-      const requested = job.requestedQuality
+      const requested = requestedQuality
       const requestedRank = requested ? QUALITY_RANK[requested] || 0 : 0
       const downgraded = !!requested && actualRank < requestedRank
 

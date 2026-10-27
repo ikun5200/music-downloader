@@ -371,7 +371,7 @@ export function SearchClient() {
         <div className="pointer-events-none absolute -bottom-24 left-1/3 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
         <div className="relative">
           <Badge tone="violet" className="mb-4 border-violet-400/20 bg-violet-500/[0.09]">
-            <Sparkles className="h-3 w-3" /> 自动选择最优渠道 · 最高可用音质
+            <Sparkles className="h-3 w-3" /> 自动选择最优渠道 · 按后台最高音质
           </Badge>
           <h1 className="max-w-2xl text-[28px] font-semibold leading-[1.15] tracking-tight text-white sm:text-[40px]">
             把想听的歌，
@@ -691,7 +691,7 @@ export function SearchClient() {
                 aria-label="下载音质"
                 className="h-9 text-[12px]"
               >
-                <option value="auto">自动（最高可用）</option>
+                <option value="auto">自动（按后台最高音质）</option>
                 {allQualities.map((q) => (
                   <option key={q} value={q}>
                     {QUALITY_NAMES[q] || q}
