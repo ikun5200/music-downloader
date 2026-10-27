@@ -4,11 +4,11 @@ import type { MetadataCandidate, MetadataQuery, MetadataSourceId } from './types
 const t2s = OpenCC.Converter({ from: 'tw', to: 'cn' })
 
 const VARIANT_RE =
-  /(live|现场|演唱会|remix|混音|伴奏|纯音乐|instrumental|acoustic|karaoke|卡拉\s*ok|翻唱|cover|dj|慢摇|加快|变调|串烧|铃声|mv版|片段|剪辑|独白版|女声版|男声版|童声|钢琴版|吉他版|demo|试听|抢听|预告)/gi
+  /(live|现场|演唱会|remix|混音|伴奏|纯音乐|instrumental|acoustic|karaoke|卡拉\s*ok|翻唱|cover|dj|慢摇|加快|加速|变调|降调|升调|串烧|铃声|mv版|片段|剪辑|独白版|女声版|男声版|童声|钢琴版|吉他版|弹唱版|纯享版|深情版|治愈版|温柔版|烟嗓版|环绕版|3d环绕|广场舞|车载|demo|试听|抢听|预告|改编|慢速|0\.8x|1\.2x)/gi
 
 const BRACKET_RE = /[（(【\[][^）)】\]]*[）)】\]]/g
 const VERSION_SUFFIX_RE =
-  /\s*[-—–]\s*(?:铃声|伴奏|remix|mix|live|现场|演唱会|纯音乐|翻唱|cover|instrumental|acoustic|dj|慢摇|加快|变调|串烧|伴奏版|纯音乐版|独白版|mv版|片段|剪辑|女声版|男声版|童声|钢琴版|吉他版|demo|试听|抢听|预告)[版曲]?\s*$/i
+  /\s*[-—–]\s*(?:铃声|伴奏|remix|mix|live|现场|演唱会|纯音乐|翻唱|cover|instrumental|acoustic|dj|慢摇|加快|加速|变调|降调|升调|串烧|伴奏版|纯音乐版|独白版|mv版|片段|剪辑|女声版|男声版|童声|钢琴版|吉他版|弹唱版|纯享版|深情版|治愈版|温柔版|烟嗓版|环绕版|广场舞|车载|demo|试听|抢听|预告|改编)[版曲]?\s*$/i
 
 export function toSimplified(value: string): string {
   if (!value) return ''
@@ -76,14 +76,21 @@ export function matchArtist(want: string, got: string): number {
   const wantKeys = artistKeys(want)
   const gotKeys = artistKeys(got)
   if (!wantKeys.length || !gotKeys.length) return 0
-  if (wantKeys.some((key) => gotKeys.includes(key))) return 1
   const wantJoined = wantKeys.join('')
   const gotJoined = gotKeys.join('')
+  if (wantJoined === gotJoined) return 1
+
+  const wantInGot = wantKeys.every((key) => gotKeys.includes(key))
+  const gotInWant = gotKeys.every((key) => wantKeys.includes(key))
+  // 候选多出歌手（常见于“周杰伦、林俊杰”这种合唱/翻唱）必须降权，
+  // 否则会把独唱原版匹配成合唱版本。
+  if (wantInGot && !gotInWant) return 0.55
+  if (gotInWant && !wantInGot) return 0.7
   if (
     Math.min(wantJoined.length, gotJoined.length) >= 2 &&
     (wantJoined.includes(gotJoined) || gotJoined.includes(wantJoined))
   ) {
-    return 0.72
+    return 0.65
   }
   return 0
 }
@@ -161,9 +168,10 @@ export function scoreCandidate(
   const score = Math.round((base - Math.min(variantFlags, 3) * 20) * 10) / 10
 
   const durationOk = !query.duration || !candidate.duration || durScore >= 0.35
+  const artistOk = !query.artist.trim() || artistScore >= 0.7
   const acceptable =
     titleScore >= 0.75 &&
-    artistScore >= 0.6 &&
+    artistOk &&
     variantFlags === 0 &&
     durationOk
 

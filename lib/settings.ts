@@ -56,17 +56,38 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiApiKeySet: false,
   aiTitleCleanEnabled: true,
   metadataScrapeEnabled: true,
-  metadataSourceOrder: ['itunes', 'qqmusic'],
+  metadataSourceOrder: [
+    'itunes',
+    'netease',
+    'kugou',
+    'kuwo',
+    'qqmusic',
+    'lrclib',
+    'theaudiodb',
+  ],
   metadataWriteInfo: true,
   metadataWriteCover: true,
   metadataWriteLyrics: true,
   metadataAiEnabled: true,
 }
 
-export const METADATA_SOURCES: MetadataSourceId[] = ['itunes', 'qqmusic']
+export const METADATA_SOURCES: MetadataSourceId[] = [
+  'itunes',
+  'netease',
+  'kugou',
+  'kuwo',
+  'qqmusic',
+  'lrclib',
+  'theaudiodb',
+]
 
 export function normalizeMetadataSourceOrder(value: unknown): MetadataSourceId[] {
   const input = Array.isArray(value) ? value : []
+  // 旧版默认值是 iTunes → QQ；QQ 搜索接口 2026-10 起返回 500，
+  // 自动迁移到包含网易云/酷狗/酷我/歌词源的新默认顺序。
+  if (input.length === 2 && input[0] === 'itunes' && input[1] === 'qqmusic') {
+    return [...METADATA_SOURCES]
+  }
   const out: MetadataSourceId[] = []
   for (const item of input) {
     if (

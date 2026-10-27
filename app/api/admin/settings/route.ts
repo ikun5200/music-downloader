@@ -24,7 +24,13 @@ const schema = z.object({
   aiApiKey: z.string().max(1000).optional(),
   aiTitleCleanEnabled: z.boolean().optional(),
   metadataScrapeEnabled: z.boolean().optional(),
-  metadataSourceOrder: z.array(z.enum(['itunes', 'qqmusic'])).min(1).max(2).optional(),
+  metadataSourceOrder: z
+    .array(
+      z.enum(['itunes', 'netease', 'kugou', 'kuwo', 'qqmusic', 'lrclib', 'theaudiodb'])
+    )
+    .min(1)
+    .max(7)
+    .optional(),
   metadataWriteInfo: z.boolean().optional(),
   metadataWriteCover: z.boolean().optional(),
   metadataWriteLyrics: z.boolean().optional(),

@@ -114,8 +114,17 @@ async function prepareCover(
     : candidate.coverUrl
       ? [candidate.coverUrl]
       : []
-  const headers =
-    candidate.source === 'qqmusic' ? { Referer: 'https://y.qq.com/' } : undefined
+  const referer =
+    candidate.source === 'qqmusic'
+      ? 'https://y.qq.com/'
+      : candidate.source === 'netease'
+        ? 'https://music.163.com/'
+        : candidate.source === 'kugou'
+          ? 'https://www.kugou.com/'
+          : candidate.source === 'kuwo'
+            ? 'https://www.kuwo.cn/'
+            : undefined
+  const headers = referer ? { Referer: referer } : undefined
   for (const url of urls) {
     const image = await fetchImage(url, { headers, timeoutMs: 20_000 })
     if (!image) continue

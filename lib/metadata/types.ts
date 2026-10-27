@@ -1,4 +1,11 @@
-export type MetadataSourceId = 'itunes' | 'qqmusic'
+export type MetadataSourceId =
+  | 'itunes'
+  | 'netease'
+  | 'kugou'
+  | 'kuwo'
+  | 'qqmusic'
+  | 'lrclib'
+  | 'theaudiodb'
 
 export interface MetadataCandidate {
   source: MetadataSourceId
@@ -47,6 +54,21 @@ export interface MetadataScrapeResult {
   note?: string
   aiUsed?: boolean
   lyricsFromQq?: boolean
+}
+
+export interface MetadataSourceResult {
+  candidates: MetadataCandidate[]
+  note?: string
+}
+
+export interface MetadataSourceAdapter {
+  id: MetadataSourceId
+  label: string
+  supportsLyrics: boolean
+  supportsCover: boolean
+  search(query: MetadataQuery, limit: number): Promise<MetadataSourceResult>
+  enrich?(candidate: MetadataCandidate): Promise<void>
+  lyrics?(candidate: MetadataCandidate): Promise<string>
 }
 
 export interface MetadataWriteResult {

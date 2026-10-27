@@ -6,6 +6,25 @@ interface RequestOptions {
   headers?: Record<string, string>
   timeoutMs?: number
   retries?: number
+  method?: string
+  body?: string
+}
+
+const hostLastAt = new Map<string, number>()
+
+async function throttleHost(url: string): Promise<void> {
+  let host = ''
+  try {
+    host = new URL(url).host
+  } catch {
+    return
+  }
+  const interval =
+    host.includes('lrclib.net') || host.includes('theaudiodb.com') ? 1000 : 350
+  const last = hostLastAt.get(host) || 0
+  const wait = interval - (Date.now() - last)
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+  hostLastAt.set(host, Date.now())
 }
 
 async function request(url: string, options: RequestOptions = {}): Promise<Response> {
@@ -14,10 +33,13 @@ async function request(url: string, options: RequestOptions = {}): Promise<Respo
   let lastError: unknown
 
   for (let attempt = 0; attempt <= retries; attempt++) {
+    await throttleHost(url)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(new Error('元数据请求超时')), timeoutMs)
     try {
       const res = await fetch(url, {
+        method: options.method || 'GET',
+        body: options.body,
         headers: {
           'User-Agent': METADATA_UA,
           Accept: '*/*',

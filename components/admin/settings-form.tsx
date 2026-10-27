@@ -27,7 +27,12 @@ import type { MetadataSourceId } from '@/lib/metadata/types'
 
 const METADATA_SOURCE_LABELS: Record<MetadataSourceId, string> = {
   itunes: 'iTunes（中国区 → 台湾区）',
+  netease: '网易云音乐',
+  kugou: '酷狗音乐',
+  kuwo: '酷我音乐',
   qqmusic: 'QQ 音乐',
+  lrclib: 'LRCLIB（歌词）',
+  theaudiodb: 'TheAudioDB（国际）',
 }
 
 interface SourceOption {
@@ -72,7 +77,7 @@ export function SettingsForm({
   const [metadataSourceOrder, setMetadataSourceOrder] = useState<MetadataSourceId[]>(
     initial.metadataSourceOrder?.length
       ? initial.metadataSourceOrder
-      : ['itunes', 'qqmusic']
+      : ['itunes', 'netease', 'kugou', 'kuwo', 'qqmusic', 'lrclib', 'theaudiodb']
   )
   const [metadataWriteInfo, setMetadataWriteInfo] = useState(initial.metadataWriteInfo)
   const [metadataWriteCover, setMetadataWriteCover] = useState(initial.metadataWriteCover)
@@ -517,7 +522,8 @@ export function SettingsForm({
         </div>
         <p className="mt-1.5 text-[10.5px] leading-4 text-white/25">
           下载完成后按顺序检索元数据，把歌名、歌手、专辑、年份、封面和 LRC
-          歌词写入音频文件；只重写标签，不重新编码音频。iTunes 默认先查中国区，没有可信原版再回退台湾区。
+          歌词写入音频文件；只重写标签，不重新编码音频。iTunes 默认先查中国区，没有可信原版再回退台湾区；
+          某个来源失败或没收录时会继续尝试后面的来源。
         </p>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -560,7 +566,7 @@ export function SettingsForm({
               ))}
             </div>
             <p className="mt-2 text-[10px] leading-4 text-white/20">
-              iTunes 不提供歌词；选中 iTunes 时会自动用 QQ 音乐的同曲候选补歌词和封面。
+              iTunes 不提供歌词；会依次用网易云、酷狗、QQ、LRCLIB 等来源补歌词，封面缺失时也会从其他来源补。
             </p>
           </div>
 

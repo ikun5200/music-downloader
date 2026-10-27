@@ -1,12 +1,13 @@
 import type { AiConfig } from '../settings'
 import { pickMetadataWithAi } from './ai'
-import { searchItunes } from './itunes'
 import { isLooseMatch, scoreCandidate } from './normalize'
-import { fetchQqAlbum, fetchQqLyrics, qqCoverCandidates, searchQq } from './qqmusic'
+import { getMetadataAdapter } from './sources'
+import { fetchKugouLyrics } from './kugou'
 import type {
   MetadataCandidate,
   MetadataQuery,
   MetadataScrapeResult,
+  MetadataSourceAdapter,
   MetadataSourceId,
 } from './types'
 
@@ -23,43 +24,102 @@ function withQueryDuration(value: unknown): number | null {
 }
 
 function mergeNotes(notes: Array<string | undefined>): string {
-  return notes.filter((note): note is string => !!note).join('；').slice(0, 500)
+  return notes
+    .filter((note): note is string => !!note)
+    .filter((note, index, list) => list.indexOf(note) === index)
+    .join('；')
+    .slice(0, 700)
 }
 
 function sortCandidates(candidates: MetadataCandidate[]): MetadataCandidate[] {
   return [...candidates].sort((a, b) => b.score - a.score)
 }
 
-async function enrichQqCandidate(candidate: MetadataCandidate): Promise<void> {
-  if (candidate.source !== 'qqmusic') return
-  const detail = await fetchQqAlbum(candidate.albumId || '', candidate.songId || '')
-  if (detail) {
-    candidate.date = candidate.date || detail.date || ''
-    candidate.genre = candidate.genre || detail.genre || ''
-    candidate.albumArtist = candidate.albumArtist || detail.albumArtist
-    candidate.publisher = candidate.publisher || detail.publisher
-    candidate.language = candidate.language || detail.language
-    candidate.track = candidate.track || detail.track
-    candidate.trackTotal = candidate.trackTotal || detail.trackTotal
-    candidate.disc = candidate.disc || detail.disc
+function hasCover(candidate: MetadataCandidate): boolean {
+  return !!(candidate.coverUrl || candidate.coverUrls?.length)
+}
+
+function hasLyrics(candidate: MetadataCandidate): boolean {
+  return !!candidate.lyrics?.trim()
+}
+
+const SOURCE_COOLDOWN_MS = 10 * 60_000
+const sourceCooldown = new Map<MetadataSourceId, number>()
+
+function attachCover(
+  target: MetadataCandidate,
+  source: MetadataCandidate,
+  notes: string[]
+): boolean {
+  if (hasCover(target)) return true
+  if (source.coverUrls?.length) {
+    target.coverUrls = source.coverUrls
+    target.coverUrl = source.coverUrl || source.coverUrls[0]
+    notes.push(`封面来自 ${source.sourceLabel}`)
+    return true
   }
-  if (!candidate.lyrics) {
-    candidate.lyrics = await fetchQqLyrics(candidate.songId || '')
+  if (source.coverUrl) {
+    target.coverUrl = source.coverUrl
+    target.coverUrls = [source.coverUrl]
+    notes.push(`封面来自 ${source.sourceLabel}`)
+    return true
   }
-  if (!candidate.coverUrls?.length && candidate.albumId) {
-    candidate.coverUrls = qqCoverCandidates(candidate.albumId)
+  return false
+}
+
+async function attachLyrics(
+  target: MetadataCandidate,
+  source: MetadataCandidate,
+  adapter: MetadataSourceAdapter,
+  notes: string[],
+  fetched: Set<string>
+): Promise<boolean> {
+  if (hasLyrics(target)) return true
+  if (hasLyrics(source)) {
+    target.lyrics = source.lyrics
+    notes.push(`歌词来自 ${source.sourceLabel}`)
+    return true
   }
-  if (!candidate.coverUrl && candidate.coverUrls?.length) {
-    candidate.coverUrl = candidate.coverUrls[0]
+  if (!adapter.supportsLyrics) return false
+  const key = `${source.source}:${source.songId || source.title}`
+  if (fetched.has(key)) return false
+  fetched.add(key)
+  try {
+    let lyrics = ''
+    if (adapter.lyrics) lyrics = await adapter.lyrics(source)
+    if (!lyrics && adapter.enrich) {
+      await adapter.enrich(source)
+      lyrics = source.lyrics || ''
+    }
+    if (lyrics?.trim()) {
+      target.lyrics = lyrics
+      notes.push(`歌词来自 ${source.sourceLabel}`)
+      return true
+    }
+  } catch {
+    // 单个源歌词失败不影响其他源
+  }
+  return false
+}
+
+async function enrichCandidate(
+  candidate: MetadataCandidate,
+  adapter: MetadataSourceAdapter
+): Promise<void> {
+  if (!adapter.enrich) return
+  try {
+    await adapter.enrich(candidate)
+  } catch {
+    // 详情补全是可选的
   }
 }
 
 /**
  * 下载后元数据刮削：
- * 1. 按后台顺序检索 iTunes / QQ 音乐；
- * 2. 规则打分过滤翻唱、live、remix、伴奏等版本；
- * 3. 可选 AI 复核（AI 失败自动回退规则）；
- * 4. 选中的候选若是 iTunes，仍从 QQ 补歌词/封面兜底。
+ * 1. 按后台顺序逐源检索，拿到可信原版后继续找歌词/封面；
+ * 2. 规则打分过滤翻唱、live、remix、伴奏、改编版等；
+ * 3. 选中的来源保持最高优先级，后续来源只补缺失的歌词/封面；
+ * 4. 可选 AI 复核（仅规则没有可信候选时），失败自动回退规则。
  */
 export async function scrapeMetadata(
   options: MetadataScrapeOptions
@@ -74,71 +134,75 @@ export async function scrapeMetadata(
 
   const order = options.sourceOrder.length
     ? options.sourceOrder
-    : (['itunes', 'qqmusic'] as MetadataSourceId[])
+    : (['itunes', 'netease', 'kugou', 'kuwo', 'qqmusic', 'lrclib', 'theaudiodb'] as MetadataSourceId[])
   const notes: string[] = []
-  const candidates: MetadataCandidate[] = []
+  const all: MetadataCandidate[] = []
+  const fetchedLyrics = new Set<string>()
   let hadError = false
-  let qqSearched = false
+  let preferred: MetadataCandidate | null = null
+  let preferredEnriched = false
 
   for (const source of order) {
-    if (source === 'itunes') {
-      const result = await searchItunes(query, 10)
-      candidates.push(...result.candidates)
-      if (result.note) notes.push(result.note)
-      if (result.candidates.length === 0 && result.note?.includes('失败')) hadError = true
-    } else if (source === 'qqmusic') {
-      qqSearched = true
-      const result = await searchQq(query, 10)
-      candidates.push(...result.candidates)
-      if (result.note) notes.push(result.note)
-      if (result.candidates.length === 0 && result.note?.includes('失败')) hadError = true
+    const adapter = getMetadataAdapter(source)
+    if ((sourceCooldown.get(source) || 0) > Date.now()) {
+      notes.push(`${adapter.label} 接口异常，暂时跳过`)
+      continue
     }
-  }
-
-  if (!candidates.length) {
-    return {
-      status: hadError ? 'failed' : 'not_found',
-      note: mergeNotes(notes) || '没有找到候选',
-    }
-  }
-
-  const scored = sortCandidates(
-    candidates.map((candidate) => scoreCandidate(candidate, query, order))
-  )
-  const viable = scored.filter((candidate) => candidate.acceptable)
-  const aiConfig =
-    options.aiConfig?.enabled && options.aiConfig.apiKey ? options.aiConfig : null
-  // 只有全部可信候选都在同一条线上时，才让 AI 复核。
-  const closeRace =
-    viable.length > 1 && viable[0].score - viable[1].score < 20
-  const needAi = viable.length === 0 || closeRace
-
-  // 来源优先级：优先选最早来源里分数接近最高分的可信候选。
-  // 例如 iTunes 和 QQ 都是原版时直接选 iTunes；若 iTunes 只有翻唱/合集等低分候选，
-  // 分数差距超过 8 分就继续看后面的来源。
-  let preferred: MetadataCandidate | null = null
-  if (viable.length) {
-    for (const source of order) {
-      const sourceCandidates = viable.filter((candidate) => candidate.source === source)
-      if (!sourceCandidates.length) continue
-      if (sourceCandidates[0].score >= viable[0].score - 8) {
-        preferred = sourceCandidates[0]
-        break
+    let result
+    try {
+      result = await adapter.search(query, 10)
+    } catch (error) {
+      result = {
+        candidates: [],
+        note: `${adapter.label} 搜索失败：${error instanceof Error ? error.message : String(error)}`,
       }
     }
+    if (result.note) notes.push(result.note)
+    if (!result.candidates.length && result.note?.includes('失败')) {
+      hadError = true
+      sourceCooldown.set(source, Date.now() + SOURCE_COOLDOWN_MS)
+    }
+    if (!result.candidates.length) continue
+
+    const scored = result.candidates.map((candidate) =>
+      scoreCandidate(candidate, query, order)
+    )
+    all.push(...scored)
+    const viable = sortCandidates(scored.filter((candidate) => candidate.acceptable))
+    if (!viable.length) continue
+
+    if (!preferred) {
+      preferred = viable[0]
+      await enrichCandidate(preferred, adapter)
+      preferredEnriched = true
+    }
+
+    // 当前来源只负责补 preferred 缺失的封面/歌词，不改变已确定的来源优先级。
+    if (!hasCover(preferred)) {
+      const withCover = viable.find((candidate) => hasCover(candidate))
+      if (withCover) {
+        attachCover(preferred, withCover, notes)
+      } else if (adapter.supportsCover) {
+        const candidate = viable[0]
+        await enrichCandidate(candidate, adapter)
+        attachCover(preferred, candidate, notes)
+      }
+    }
+
+    if (!hasLyrics(preferred)) {
+      const candidate = viable.find((item) => hasLyrics(item)) || viable[0]
+      await attachLyrics(preferred, candidate, adapter, notes, fetchedLyrics)
+    }
+
+    if (hasCover(preferred) && hasLyrics(preferred)) break
   }
 
-  let selected: MetadataCandidate | null = preferred
   let aiUsed = false
-  let aiNote = preferred
-    ? `规则匹配（优先 ${preferred.sourceLabel}）：${preferred.reasons.join('，')}`
-    : ''
-
-  if (!selected && aiConfig && needAi) {
-    const pool = viable.length ? viable.slice(0, 8) : scored.filter(isLooseMatch).slice(0, 8)
-    if (pool.length) {
+  if (!preferred) {
+    const loose = sortCandidates(all.filter(isLooseMatch)).slice(0, 8)
+    if (options.aiConfig?.enabled && options.aiConfig.apiKey && loose.length) {
       try {
-        const pick = await pickMetadataWithAi(query, pool, order, aiConfig)
+        const pick = await pickMetadataWithAi(query, loose, order, options.aiConfig)
         if (pick.index === -1) {
           return {
             status: 'not_found',
@@ -146,30 +210,32 @@ export async function scrapeMetadata(
             aiUsed: true,
           }
         }
-        selected = pool[pick.index]
+        preferred = loose[pick.index]
         aiUsed = true
-        aiNote = `AI 选择：${pick.reason || '匹配原版'}`
+        notes.push(`AI 选择：${pick.reason || '匹配原版'}`)
+        const adapter = getMetadataAdapter(preferred.source)
+        await enrichCandidate(preferred, adapter)
+        preferredEnriched = true
       } catch (error) {
-        notes.push(`AI 复核失败，已回退规则：${error instanceof Error ? error.message : String(error)}`)
+        notes.push(
+          `AI 复核失败，已回退规则：${error instanceof Error ? error.message : String(error)}`
+        )
       }
     }
   }
 
-  if (!selected) {
-    selected = viable[0] || null
-    if (selected) aiNote = `规则匹配：${selected.reasons.join('，')}`
-  }
-
-  if (!selected) {
+  if (!preferred) {
     return {
-      status: 'not_found',
-      note: mergeNotes([...notes, '没有通过原版校验的候选（已排除翻唱/live/remix/伴奏等）']),
-      aiUsed,
+      status: hadError ? 'failed' : 'not_found',
+      note: mergeNotes([
+        ...notes,
+        '没有通过原版校验的候选（已排除翻唱/live/remix/伴奏等）',
+      ]),
     }
   }
 
   // AI 兜底时可能选中规则未通过的候选；版本标记太多仍拒绝，避免写错。
-  if (selected.variantFlags > 2) {
+  if (preferred.variantFlags > 2) {
     return {
       status: 'not_found',
       note: mergeNotes([...notes, '候选版本标记过多，未写入']),
@@ -177,51 +243,43 @@ export async function scrapeMetadata(
     }
   }
 
-  if (selected.source === 'qqmusic') {
-    await enrichQqCandidate(selected)
-    notes.push(aiNote || 'QQ 音乐匹配')
-  } else {
-    notes.push(aiNote || 'iTunes 匹配')
+  const preferredAdapter = getMetadataAdapter(preferred.source)
+  if (!preferredEnriched) {
+    await enrichCandidate(preferred, preferredAdapter)
+  }
 
-    // iTunes 不提供歌词：用 QQ 的同曲候选补歌词/封面兜底。
-    let qqCandidates = scored.filter((candidate) => candidate.source === 'qqmusic')
-    if (!qqCandidates.length && !qqSearched) {
-      const fallback = await searchQq(query, 10)
-      if (fallback.candidates.length) {
-        qqCandidates = fallback.candidates.map((candidate) =>
-          scoreCandidate(candidate, query, order)
-        )
-        notes.push(fallback.note || 'QQ 音乐歌词兜底')
-      }
+  // 用其余已检索到的可信候选补歌词/封面；仍然没有就用酷狗/LRCLIB 直接兜底。
+  if (!hasLyrics(preferred)) {
+    for (const candidate of sortCandidates(all)) {
+      if (!candidate.acceptable || hasLyrics(preferred)) continue
+      const adapter = getMetadataAdapter(candidate.source)
+      await attachLyrics(preferred, candidate, adapter, notes, fetchedLyrics)
     }
-    const qqExtra = sortCandidates(
-      qqCandidates.filter((candidate) => candidate.acceptable)
-    )[0]
-    if (qqExtra) {
-      const lyric = await fetchQqLyrics(qqExtra.songId || '')
-      if (lyric) {
-        selected.lyrics = lyric
-        notes.push('歌词来自 QQ 音乐')
-      }
-      if (!selected.coverUrls?.length && qqExtra.coverUrls?.length) {
-        selected.coverUrls = qqExtra.coverUrls
-      }
-      if (!selected.coverUrl && qqExtra.coverUrl) selected.coverUrl = qqExtra.coverUrl
-      if (!selected.date || !selected.genre) {
-        await enrichQqCandidate(qqExtra)
-        selected.date = selected.date || qqExtra.date
-        selected.genre = selected.genre || qqExtra.genre
-      }
-    } else {
-      notes.push('iTunes 无歌词，QQ 也未找到同曲歌词')
+  }
+  if (!hasLyrics(preferred)) {
+    const lyrics = await fetchKugouLyrics(
+      query.title,
+      query.artist,
+      query.duration || undefined
+    ).catch(() => '')
+    if (lyrics) {
+      preferred.lyrics = lyrics
+      notes.push('歌词来自 酷狗音乐（兜底）')
+    }
+  }
+  if (!hasCover(preferred)) {
+    for (const candidate of sortCandidates(all)) {
+      if (!candidate.acceptable || hasCover(preferred)) continue
+      attachCover(preferred, candidate, notes)
     }
   }
 
+  notes.push(`匹配来源：${preferred.sourceLabel}`)
   return {
     status: 'success',
-    candidate: selected,
+    candidate: preferred,
     note: mergeNotes(notes),
     aiUsed,
-    lyricsFromQq: selected.source === 'itunes' && !!selected.lyrics,
+    lyricsFromQq: hasLyrics(preferred) && preferred.source === 'qqmusic',
   }
 }

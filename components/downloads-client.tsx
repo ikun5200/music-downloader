@@ -74,7 +74,12 @@ const STATUS: Record<string, { label: string; tone: 'neutral' | 'violet' | 'cyan
 
 const METADATA_SOURCE_SHORT: Record<string, string> = {
   itunes: 'iTunes',
+  netease: '网易云',
+  kugou: '酷狗',
+  kuwo: '酷我',
   qqmusic: 'QQ 音乐',
+  lrclib: 'LRCLIB',
+  theaudiodb: 'TheAudioDB',
 }
 
 function metadataBadge(job: JobDto): {
