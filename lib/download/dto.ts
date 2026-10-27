@@ -1,5 +1,6 @@
 import type { DownloadJob } from '@prisma/client'
 import path from 'path'
+import { PLATFORM_NAMES, type Platform } from '../constants'
 import { safeJson } from '../utils'
 import { resolveDownloadRoot } from './filename'
 
@@ -8,6 +9,10 @@ export function jobToDto(job: DownloadJob & { channel?: { name: string } | null 
   return {
     id: job.id,
     platform: job.platform,
+    platformName:
+      job.platform === 'local'
+        ? '本地文件'
+        : PLATFORM_NAMES[job.platform as Platform] || job.platform,
     songId: job.songId,
     title: job.title,
     artist: job.artist,

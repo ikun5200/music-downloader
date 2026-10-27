@@ -128,16 +128,21 @@ export default async function AdminDashboard() {
             {recent.length ? (
               recent.map((job) => {
                 const dto = jobToDto(job)
+                const isLocal = job.platform === 'local'
                 return (
                   <div key={job.id} className="flex items-center gap-2.5 px-4 py-2.5">
-                    <PlatformBadge platform={job.platform as Platform} showName={false} className="border-0 bg-transparent px-0" />
+                    {isLocal ? (
+                      <Badge tone="neutral">本地</Badge>
+                    ) : (
+                      <PlatformBadge platform={job.platform as Platform} showName={false} className="border-0 bg-transparent px-0" />
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[12px] text-white/80">
                         {job.title}
-                        <span className="text-white/30"> · {job.artist}</span>
+                        <span className="text-white/30"> · {job.artist || '未知歌手'}</span>
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-white/25">
-                        <span>{PLATFORM_NAMES[job.platform as Platform]}</span>
+                        <span>{dto.platformName || (isLocal ? '本地文件' : PLATFORM_NAMES[job.platform as Platform])}</span>
                         <span>·</span>
                         <span>{job.channel?.name || '未分配渠道'}</span>
                         {dto.actualQuality ? <span>· {dto.actualQuality}</span> : null}

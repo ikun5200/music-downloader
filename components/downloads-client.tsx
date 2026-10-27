@@ -7,6 +7,7 @@ import {
   Clock3,
   Download,
   ExternalLink,
+  FolderSearch,
   Loader2,
   Play,
   RefreshCw,
@@ -26,7 +27,8 @@ import { cn, formatBytes } from '@/lib/utils'
 
 interface JobDto {
   id: string
-  platform: Platform
+  platform: string
+  platformName?: string | null
   songId: string
   title: string
   artist: string
@@ -130,6 +132,7 @@ function mergeJobs(prev: JobDto[], incoming: JobDto[]): JobDto[] {
 export function DownloadsClient() {
   const [jobs, setJobs] = useState<JobDto[]>([])
   const [loading, setLoading] = useState(true)
+  const [scanning, setScanning] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
@@ -153,6 +156,42 @@ export function DownloadsClient() {
       setLoading(false)
     }
   }, [])
+
+  async function scanFolder() {
+    if (scanning) return
+    if (
+      !window.confirm(
+        '扫描下载目录里还没有成功刮削的音频文件，并自动写入标签、封面和歌词？'
+      )
+    ) {
+      return
+    }
+    setScanning(true)
+    try {
+      const res = await fetch('/api/admin/metadata/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (!res.ok || json.code !== 0) throw new Error(json.message || '扫描失败')
+      const data = json.data as {
+        scanned: number
+        queued: number
+        skipped: number
+        failed: number
+        note?: string
+      }
+      toast.success(`扫描完成：新增 ${data.queued} 首`, {
+        description: data.note,
+      })
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setScanning(false)
+    }
+  }
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore || !nextCursor) return
@@ -321,6 +360,7 @@ export function DownloadsClient() {
   function JobCard({ job, selectable = false }: { job: JobDto; selectable?: boolean }) {
     const status = STATUS[job.status] || STATUS.queued
     const metaBadge = metadataBadge(job)
+    const isLocal = job.platform === 'local'
     const activeJob = ACTIVE.has(job.status)
     const isBusy = busy?.endsWith(job.id) || busy === 'batch-delete'
     const isSelected = selected.has(job.id)
@@ -371,8 +411,16 @@ export function DownloadsClient() {
               {metaBadge ? <Badge tone={metaBadge.tone}>{metaBadge.label}</Badge> : null}
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-white/35">
-              <PlatformBadge platform={job.platform} showName={false} className="border-0 bg-transparent px-0" />
-              <span>{PLATFORM_NAMES[job.platform]}</span>
+              {isLocal ? (
+                <Badge tone="neutral">本地</Badge>
+              ) : (
+                <PlatformBadge
+                  platform={job.platform as Platform}
+                  showName={false}
+                  className="border-0 bg-transparent px-0"
+                />
+              )}
+              <span>{job.platformName || (isLocal ? '本地文件' : PLATFORM_NAMES[job.platform as Platform])}</span>
               <span>·</span>
               <span className="truncate">{job.artist}</span>
               {job.channelName ? (
@@ -526,9 +574,25 @@ export function DownloadsClient() {
             实时查看解析、下载与校验进度。文件会保存到 NAS 的音乐目录。
           </p>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => void load()}>
-          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} /> 刷新
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void scanFolder()}
+            disabled={scanning}
+            className="whitespace-nowrap"
+          >
+            {scanning ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FolderSearch className="h-3.5 w-3.5" />
+            )}
+            扫描文件夹刮削
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => void load()}>
+            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} /> 刷新
+          </Button>
+        </div>
       </div>
 
       <BatchHistory />
