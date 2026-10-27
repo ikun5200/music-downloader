@@ -290,7 +290,7 @@ music-downloader/
 
 容器内：
 
-- `/downloads`：宿主机音乐目录
+- `/downloads`：宿主机音乐下载目录（默认 `/vol1/1000/音乐/downloads`）
 - `/app/data/app.db`：SQLite
 - `/app/data/sources/`：上传/导入的音源脚本
 - `/app/data/tmp/`：下载临时文件
