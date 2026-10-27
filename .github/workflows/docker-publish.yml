@@ -87,8 +87,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PKG="${GITHUB_REPOSITORY#*/}"
+          # 保留最新构建的版本，删除更早的版本；不依赖 latest 标签（标签同步可能延迟）。
+          sleep 20
           gh api "/user/packages/container/$PKG/versions" --paginate \
-            --jq '.[] | select(((.metadata.container.tags // []) | index("latest")) | not) | .id' |
+            --jq '.[] | [.created_at, .id] | @tsv' |
+          sort -r |
+          tail -n +2 |
+          cut -f2 |
           while read -r id; do
             [ -n "$id" ] || continue
             echo "Deleting old package version $id"
