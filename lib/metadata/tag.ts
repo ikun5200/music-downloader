@@ -3,6 +3,7 @@ import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { fetchImage } from './http'
+import { cleanLyrics } from './lyrics'
 import type { MetadataCandidate, MetadataWriteResult } from './types'
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
@@ -78,7 +79,12 @@ function ffmpegMuxerArgs(ext: string, hasCover: boolean): string[] {
 
 function buildMetadataArgs(
   candidate: MetadataCandidate,
-  options: { writeInfo: boolean; writeLyrics: boolean }
+  options: {
+    writeInfo: boolean
+    writeLyrics: boolean
+    lyricsCleanCredits?: boolean
+    lyricsSimplify?: boolean
+  }
 ): string[] {
   const args: string[] = []
   if (options.writeInfo) {
@@ -101,7 +107,15 @@ function buildMetadataArgs(
     }
   }
   if (options.writeLyrics) {
-    const lyrics = tagValue(candidate.lyrics)
+    const rawLyrics = tagValue(candidate.lyrics)
+    const lyrics = rawLyrics
+      ? cleanLyrics(rawLyrics, {
+          title: candidate.title,
+          artist: candidate.artist,
+          cleanCredits: options.lyricsCleanCredits,
+          simplify: options.lyricsSimplify,
+        })
+      : ''
     if (lyrics) args.push('-metadata', `lyrics=${lyrics}`)
   }
   return args
@@ -187,7 +201,13 @@ async function replaceFile(source: string, target: string): Promise<void> {
 export async function writeMetadataTags(
   filePath: string,
   candidate: MetadataCandidate,
-  options: { writeInfo: boolean; writeCover: boolean; writeLyrics: boolean }
+  options: {
+    writeInfo: boolean
+    writeCover: boolean
+    writeLyrics: boolean
+    lyricsCleanCredits?: boolean
+    lyricsSimplify?: boolean
+  }
 ): Promise<MetadataWriteResult> {
   const ext = path.extname(filePath).slice(1).toLowerCase()
   if (!ext) return { ok: false, partial: false, wrote: [], note: '无法识别文件扩展名' }
@@ -212,6 +232,8 @@ export async function writeMetadataTags(
     const metadataArgs = buildMetadataArgs(candidate, {
       writeInfo: options.writeInfo,
       writeLyrics: options.writeLyrics,
+      lyricsCleanCredits: options.lyricsCleanCredits,
+      lyricsSimplify: options.lyricsSimplify,
     })
 
     const runFfmpeg = async (withCover: boolean) => {
@@ -297,5 +319,64 @@ export async function writeMetadataTags(
   } finally {
     await fs.unlink(output).catch(() => {})
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+export async function writeLyricsOnly(
+  filePath: string,
+  lyrics: string
+): Promise<MetadataWriteResult> {
+  const ext = path.extname(filePath).slice(1).toLowerCase()
+  if (!ext) return { ok: false, partial: false, wrote: [], note: '无法识别文件扩展名' }
+  const stat = await fs.stat(filePath)
+  const output = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath, path.extname(filePath))}.lyrics-${Date.now()}-${process.pid}${path.extname(filePath)}`
+  )
+  try {
+    const args = [
+      '-y',
+      '-nostdin',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      filePath,
+      '-map_metadata',
+      '0',
+      '-map',
+      '0',
+      '-c',
+      'copy',
+      '-metadata',
+      `lyrics=${String(lyrics || '').trim()}`,
+    ]
+    if (ext === 'mp3') args.push('-id3v2_version', '3')
+    args.push(output)
+    const result = await run(FFMPEG, args)
+    if (result.code !== 0) {
+      return {
+        ok: false,
+        partial: false,
+        wrote: [],
+        note: `ffmpeg 写入歌词失败：${result.stderr.trim().slice(0, 300) || '未知错误'}`,
+      }
+    }
+    const outputStat = await fs.stat(output)
+    if (!outputStat.size) {
+      return { ok: false, partial: false, wrote: [], note: 'ffmpeg 输出文件为空' }
+    }
+    await fs.chmod(output, stat.mode & 0o777)
+    await replaceFile(output, filePath)
+    return { ok: true, partial: false, wrote: ['歌词'], note: '歌词已清理' }
+  } catch (error) {
+    return {
+      ok: false,
+      partial: false,
+      wrote: [],
+      note: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    await fs.unlink(output).catch(() => {})
   }
 }

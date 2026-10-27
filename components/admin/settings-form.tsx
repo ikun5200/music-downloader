@@ -82,6 +82,8 @@ export function SettingsForm({
   const [metadataWriteInfo, setMetadataWriteInfo] = useState(initial.metadataWriteInfo)
   const [metadataWriteCover, setMetadataWriteCover] = useState(initial.metadataWriteCover)
   const [metadataWriteLyrics, setMetadataWriteLyrics] = useState(initial.metadataWriteLyrics)
+  const [lyricsCleanCredits, setLyricsCleanCredits] = useState(initial.lyricsCleanCredits)
+  const [lyricsSimplify, setLyricsSimplify] = useState(initial.lyricsSimplify)
   const [metadataAiEnabled, setMetadataAiEnabled] = useState(initial.metadataAiEnabled)
   const [rescraping, setRescraping] = useState(false)
   const [testingAi, setTestingAi] = useState(false)
@@ -159,6 +161,8 @@ export function SettingsForm({
           metadataWriteInfo,
           metadataWriteCover,
           metadataWriteLyrics,
+          lyricsCleanCredits,
+          lyricsSimplify,
           metadataAiEnabled,
         }),
       })
@@ -593,6 +597,32 @@ export function SettingsForm({
                 checked={metadataWriteLyrics}
                 onChange={setMetadataWriteLyrics}
                 label="写入歌词"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-[11px] text-white/55">清理歌词制作人信息</div>
+                <div className="mt-0.5 text-[10px] leading-4 text-white/25">
+                  去掉开头的作词、作曲、编曲、制作人、公司等说明，让歌词直接从第一句开始。
+                </div>
+              </div>
+              <Switch
+                checked={lyricsCleanCredits}
+                onChange={setLyricsCleanCredits}
+                label="清理歌词制作人信息"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-[11px] text-white/55">歌词转简体</div>
+                <div className="mt-0.5 text-[10px] leading-4 text-white/25">
+                  网易云/LRCLIB 返回的繁体中文会统一转成简体，英文和日文保持原样。
+                </div>
+              </div>
+              <Switch
+                checked={lyricsSimplify}
+                onChange={setLyricsSimplify}
+                label="歌词转简体"
               />
             </div>
             <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">

@@ -1,6 +1,7 @@
 import type { AiConfig } from '../settings'
 import { pickMetadataWithAi } from './ai'
 import {
+  cleanAlbumName,
   isCompilationAlbum,
   isLooseMatch,
   isSyncedLyrics,
@@ -342,6 +343,12 @@ export async function scrapeMetadata(
     preferred.track = undefined
     preferred.trackTotal = undefined
     preferred.disc = undefined
+  } else {
+    const cleanedAlbum = cleanAlbumName(preferred.album)
+    if (cleanedAlbum && cleanedAlbum !== preferred.album) {
+      notes.push(`专辑名已规范化：${preferred.album} → ${cleanedAlbum}`)
+      preferred.album = cleanedAlbum
+    }
   }
   if (hasLyrics(preferred) && !hasSyncedLyrics(preferred)) {
     notes.push('只找到纯文本歌词，播放器可能无法自动滚动')

@@ -119,6 +119,8 @@ async function processJob(job: DownloadJob): Promise<void> {
       writeInfo: settings.metadataWriteInfo,
       writeCover: settings.metadataWriteCover,
       writeLyrics: settings.metadataWriteLyrics,
+      lyricsCleanCredits: settings.lyricsCleanCredits,
+      lyricsSimplify: settings.lyricsSimplify,
     })
 
     const note = [result.note, written.note].filter(Boolean).join('；').slice(0, 1000)

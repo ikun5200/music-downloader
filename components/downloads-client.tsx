@@ -7,6 +7,7 @@ import {
   Clock3,
   Download,
   ExternalLink,
+  FileText,
   FolderSearch,
   Loader2,
   Play,
@@ -133,6 +134,7 @@ export function DownloadsClient() {
   const [jobs, setJobs] = useState<JobDto[]>([])
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
+  const [cleaningLyrics, setCleaningLyrics] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
@@ -190,6 +192,39 @@ export function DownloadsClient() {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
       setScanning(false)
+    }
+  }
+
+  async function cleanLyricsFiles() {
+    if (cleaningLyrics) return
+    if (
+      !window.confirm(
+        '清理下载目录所有音频内嵌歌词：去掉开头的作词/作曲/制作人/公司信息，并按设置转简体。只改歌词标签，不重新编码音频。继续？'
+      )
+    ) {
+      return
+    }
+    setCleaningLyrics(true)
+    try {
+      const res = await fetch('/api/admin/metadata/lyrics', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok || json.code !== 0) throw new Error(json.message || '歌词清理失败')
+      const data = json.data as {
+        scanned: number
+        withLyrics: number
+        changed: number
+        unchanged: number
+        failed: number
+        note?: string
+        errors?: string[]
+      }
+      toast.success(`歌词清理完成：改写 ${data.changed} 首`, {
+        description: data.errors?.length ? data.errors.slice(0, 3).join('；') : data.note,
+      })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCleaningLyrics(false)
     }
   }
 
@@ -588,6 +623,20 @@ export function DownloadsClient() {
               <FolderSearch className="h-3.5 w-3.5" />
             )}
             扫描文件夹刮削
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void cleanLyricsFiles()}
+            disabled={cleaningLyrics}
+            className="whitespace-nowrap"
+          >
+            {cleaningLyrics ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileText className="h-3.5 w-3.5" />
+            )}
+            清理全部歌词
           </Button>
           <Button variant="secondary" size="sm" onClick={() => void load()}>
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} /> 刷新

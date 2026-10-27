@@ -191,6 +191,7 @@ export interface FileAudioInfo {
   title?: string
   artist?: string
   album?: string
+  lyrics?: string
   error?: string
 }
 
@@ -226,6 +227,12 @@ export async function ffprobeFile(filePath: string): Promise<FileAudioInfo> {
       title: tags.title || tags.TITLE || undefined,
       artist: tags.artist || tags.ARTIST || tags.album_artist || undefined,
       album: tags.album || tags.ALBUM || undefined,
+      lyrics:
+        tags.lyrics ||
+        tags.LYRICS ||
+        tags.unsyncedlyrics ||
+        tags.UNSYNCEDLYRICS ||
+        undefined,
     }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }

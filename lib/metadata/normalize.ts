@@ -26,6 +26,26 @@ export function isSyncedLyrics(value: string | null | undefined): boolean {
   return /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/.test(String(value || ''))
 }
 
+const RELEASE_SUFFIX_RE =
+  /\s*[-–—]\s*(?:single|ep|deluxe(?:\s+edition)?|special\s+edition|limited\s+edition)\s*$/i
+const RELEASE_PAREN_RE =
+  /\s*[（(【\[]([^）)】\]]*(?:主题曲|片头曲|片尾曲|插曲|推广曲|宣传曲|印象曲|影视原声|电视原声|电影原声|原声带|剧集|电影|电视剧|动画|游戏|演唱会|巡演|JJ20|王者荣耀)[^）)】\]]*)[）)】\]]\s*$/i
+
+/**
+ * 把 Single/EP/主题曲/影视原声这类发行说明从专辑名里去掉，
+ * 避免飞牛音乐把一首歌单独列成一张“专辑”。
+ * 只处理明确是发行类型的后缀，不碰“概念自选辑”等正式专辑名。
+ */
+export function cleanAlbumName(value: string | null | undefined): string {
+  let text = String(value || '').trim()
+  if (!text) return text
+  text = text.replace(RELEASE_SUFFIX_RE, '').trim()
+  text = text.replace(RELEASE_PAREN_RE, '').trim()
+  text = text.replace(/\bVol\.\s*(\d+)/gi, 'Vol.$1')
+  text = text.replace(/\s{2,}/g, ' ').trim()
+  return text || String(value || '').trim()
+}
+
 export function toSimplified(value: string): string {
   if (!value) return ''
   try {
