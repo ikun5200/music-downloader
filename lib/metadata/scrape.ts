@@ -152,6 +152,8 @@ export async function scrapeMetadata(
     artist: String(options.query.artist || '').trim(),
     album: options.query.album || '',
     duration: withQueryDuration(options.query.duration),
+    versionTags: options.query.versionTags || [],
+    languageTags: options.query.languageTags || [],
   }
   if (!query.title) return { status: 'not_found', note: '缺少歌名，无法刮削' }
 

@@ -175,18 +175,18 @@ describe('batch song selector', () => {
     expect(selection.reason).toContain('AI')
   })
 
-  it('uses AI to reconsider candidates rejected by the variant rules', async () => {
-    const selection = await selectBestSong(
-      '愿与愁 林俊杰',
-      results([['kw', [song('kw', '愿与愁 (Live)', '林俊杰', 250)]]]),
-      info,
-      {
-        aiConfig,
-        aiChat: async () => JSON.stringify({ index: 0, reason: 'AI 判断这是可下载版本' }),
-      }
-    )
-    expect(selection.song.title).toContain('愿与愁')
-    expect(selection.aiUsed).toBe(true)
+  it('does not let AI pick a variant when no version was requested', async () => {
+    await expect(
+      selectBestSong(
+        '愿与愁 林俊杰',
+        results([['kw', [song('kw', '愿与愁 (Live)', '林俊杰', 250, '演唱会')]]]),
+        info,
+        {
+          aiConfig,
+          aiChat: async () => JSON.stringify({ index: 0, reason: 'AI 想选现场版' }),
+        }
+      )
+    ).rejects.toThrow(/未下载/)
   })
 
   it('sends every raw candidate to AI, including ones outside the rule top list', async () => {
@@ -214,6 +214,148 @@ describe('batch song selector', () => {
     expect(payload.candidates.some((candidate: any) => candidate.album === '打得火热')).toBe(true)
     expect(selection.song.album).toBe('打得火热')
     expect(selection.aiUsed).toBe(true)
+  })
+
+  it('honors an explicit live request instead of defaulting to studio', async () => {
+    const studio = song('kw', 'K歌之王', '陈奕迅', 222, '打得火热')
+    const live = song('kw', 'K歌之王 (Live)', '陈奕迅', 233, '2003演唱会')
+    let payload: any = null
+    const selection = await selectBestSong(
+      'K歌之王 Live 陈奕迅',
+      results([['kw', [studio, live]]]),
+      info,
+      {
+        aiConfig,
+        aiChat: async (_config, messages) => {
+          payload = JSON.parse(String(messages[messages.length - 1].content))
+          const index = payload.candidates.findIndex((candidate: any) =>
+            candidate.title.includes('Live')
+          )
+          return JSON.stringify({ index, reason: '用户明确要求 Live 版' })
+        },
+      }
+    )
+    expect(payload.requestedVersion).toContain('live')
+    expect(selection.song.title).toContain('Live')
+    expect(selection.aiUsed).toBe(true)
+  })
+
+  it('rule fallback selects the requested live version when AI is unavailable', async () => {
+    const selection = await selectBestSong(
+      'K歌之王 Live 陈奕迅',
+      results([
+        [
+          'kw',
+          [
+            song('kw', 'K歌之王', '陈奕迅', 222, '打得火热'),
+            song('kw', 'K歌之王 (Live)', '陈奕迅', 233, '2003演唱会'),
+          ],
+        ],
+      ]),
+      info,
+      { aiConfig: null }
+    )
+    expect(selection.song.title).toContain('Live')
+    expect(selection.aiUsed).toBe(false)
+  })
+
+  it('honors an explicit language request', async () => {
+    const selection = await selectBestSong(
+      'K歌之王 粤语 陈奕迅',
+      results([
+        [
+          'kw',
+          [
+            song('kw', 'K歌之王', '陈奕迅', 222, '打得火热'),
+            song('kw', 'K歌之王 (粤语)', '陈奕迅', 222, '打得火热'),
+            song('kw', 'K歌之王 (国语)', '陈奕迅', 218, '反正是我'),
+          ],
+        ],
+      ]),
+      info,
+      { aiConfig: null }
+    )
+    expect(selection.song.title).toContain('粤语')
+  })
+
+  it('defaults to studio and excludes live albums when no version is requested', async () => {
+    const selection = await selectBestSong(
+      'K歌之王 陈奕迅',
+      results([
+        [
+          'kw',
+          [
+            song('kw', 'K歌之王', '陈奕迅', 222, '打得火热'),
+            song('kw', 'K歌之王 (Live)', '陈奕迅', 233, '2003演唱会'),
+          ],
+        ],
+      ]),
+      info,
+      { aiConfig: null }
+    )
+    expect(selection.song.title).toBe('K歌之王')
+    expect(selection.song.album).toBe('打得火热')
+  })
+
+  it('falls back to the requested live version when AI picks studio', async () => {
+    const studio = song('kw', 'K歌之王', '陈奕迅', 222, '打得火热')
+    const live = song('kw', 'K歌之王 (Live)', '陈奕迅', 233, '2003演唱会')
+    const selection = await selectBestSong(
+      'K歌之王 Live 陈奕迅',
+      results([['kw', [studio, live]]]),
+      info,
+      {
+        aiConfig,
+        aiChat: async () => JSON.stringify({ index: 0, reason: 'AI 选错了录音室版' }),
+      }
+    )
+    expect(selection.song.title).toContain('Live')
+    expect(selection.aiUsed).toBe(false)
+  })
+
+  it('falls back to studio when AI picks live for a default request', async () => {
+    const studio = song('kw', 'K歌之王', '陈奕迅', 222, '打得火热')
+    const live = song('kw', 'K歌之王 (Live)', '陈奕迅', 233, '2003演唱会')
+    const selection = await selectBestSong(
+      'K歌之王 陈奕迅',
+      results([['kw', [studio, live]]]),
+      info,
+      {
+        aiConfig,
+        aiChat: async () => JSON.stringify({ index: 1, reason: 'AI 选错了现场版' }),
+      }
+    )
+    expect(selection.song.title).toBe('K歌之王')
+    expect(selection.song.album).toBe('打得火热')
+    expect(selection.aiUsed).toBe(false)
+  })
+
+  it('prefers the original album over a compilation for a requested language', async () => {
+    const selection = await selectBestSong(
+      'K歌之王 粤语 陈奕迅',
+      results([
+        [
+          'kw',
+          [
+            song('kw', 'K歌之王 (粤语)', '陈奕迅', 223, '陈奕迅 广东精选'),
+            song('kw', 'K歌之王 (粤语)', '陈奕迅', 222, '打得火热'),
+          ],
+        ],
+      ]),
+      info,
+      {
+        aiConfig,
+        aiChat: async (_config, messages) => {
+          const payload = JSON.parse(String(messages[messages.length - 1].content))
+          const index = payload.candidates.findIndex(
+            (candidate: any) => candidate.album === '陈奕迅 广东精选'
+          )
+          return JSON.stringify({ index, reason: 'AI 选了精选集' })
+        },
+      }
+    )
+    expect(selection.song.album).toBe('打得火热')
+    expect(selection.aiUsed).toBe(false)
   })
 
   it('prefers the configured platform order when scores are close', async () => {

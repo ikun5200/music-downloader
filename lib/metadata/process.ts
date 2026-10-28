@@ -2,6 +2,7 @@ import fs from 'fs/promises'
 import type { DownloadJob } from '@prisma/client'
 import { getAiConfig, type AppSettings } from '../settings'
 import { safeJson } from '../utils'
+import { detectLanguageTags, detectVersionTags } from '../version-intent'
 import { scrapeMetadata } from './scrape'
 import { cleanLyricsWithAi } from './lyrics-ai'
 import { writeMetadataTags } from './tag'
@@ -51,6 +52,8 @@ export async function processMetadataForJob(
         artist: job.artist,
         album: job.album,
         duration: Number.isFinite(duration) && duration > 0 ? duration : null,
+        versionTags: detectVersionTags(`${job.title} ${job.album || ''}`),
+        languageTags: detectLanguageTags(`${job.title} ${job.album || ''}`),
       },
       sourceOrder: settings.metadataSourceOrder,
       aiConfig: aiEnabled ? aiConfig : null,

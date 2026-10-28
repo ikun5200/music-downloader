@@ -4,6 +4,13 @@ import { normalizeText } from '../utils'
 import { chatCompletion, extractJsonObject, type ChatMessage } from '../ai/client'
 import { getAiConfig, type AiConfig } from '../settings'
 import { isCompilationAlbum } from '../metadata/normalize'
+import {
+  detectLanguageTags,
+  detectVersionTags,
+  matchesVersionIntent,
+  type LanguageTag,
+  type VersionTag,
+} from '../version-intent'
 
 export interface PlatformInfo {
   channels: number
@@ -39,6 +46,10 @@ interface CandidateBase {
   variant: boolean
   /** 专辑名命中现场/精选/钢琴等标记；只作为 AI 参考，不直接丢弃候选。 */
   albumVariant: boolean
+  /** 标题/专辑中识别出的版本类型，用于匹配用户明确要求的版本。 */
+  versionTags: VersionTag[]
+  /** 标题/专辑中识别出的语言版本。 */
+  languageTags: LanguageTag[]
 }
 
 interface PreparedCandidate extends CandidateBase {
@@ -57,14 +68,17 @@ const VERSION_RE =
 const GENERIC_ARTIST_RE =
   /(音乐调频|歌单|电台|音乐台|音乐信箱|宝藏|推荐|精选|合集|频道|fm|radio|翻唱集|播放器)/i
 
-// 用户常在批量名单里附带音质/版本描述，这些词不参与标题/歌手匹配。
+// 用户常在批量名单里附带音质/版本/语言描述，这些词不参与标题/歌手匹配。
 const QUERY_STOP_RE =
-  /^(原版|原唱|无损|高音质|高清|flac|mp3|320k|128k|hires|hi-res|母带|24bit|官方)$/i
+  /^(原版|原唱|无损|高音质|高清|flac|mp3|320k|128k|hires|hi-res|母带|24bit|官方|live|现场|现场版|演唱会|音乐会|音乐节|伴奏|伴奏版|纯音乐|纯音乐版|钢琴|钢琴版|吉他|吉他版|remix|混音|dj|翻唱|cover|acoustic|不插电|demo|小样|粤语|粤语版|国语|国语版|普通话|英文|英文版|英语|日语|日语版|韩语|韩语版|version|重制|重录|新版)$/i
 
-const AI_SYSTEM_PROMPT = `你是音乐下载站的选版助手。用户想下载的是原版录音室歌曲，不是翻唱、cover、伴奏、纯音乐、钢琴/吉他等器乐版、DJ、remix、live/现场/演唱会、组曲/串烧、MV首播/解说、电台节目、合集或改编对唱版。
-候选列表是各平台的完整搜索结果，没有经过规则筛选，里面可能有很多变体、合集和无关歌曲。请逐条判断，只选择真正的原版录音室版本；如果没有原版，返回 {"index": -1, "reason": "原因"}，不要为了下载而强行选择变体。
-注意：variant 字段只根据标题判断；专辑名里的“演唱会/Live/精选/合集/钢琴/伴奏/AIR/新版本”等也可能是变体，要结合 album 和 albumVariant 判断。
-优先：标题一致、歌手一致、原始录音室专辑、时长正常；如果多个平台都是原版，优先平台顺序靠前的平台。
+const AI_SYSTEM_PROMPT = `你是音乐下载站的选版助手。先看 query 是否明确指定了版本或语言：
+- 如果 query 里写了 Live/现场/演唱会/音乐会/音乐节/伴奏/纯音乐/钢琴/吉他/Remix/DJ/翻唱/不插电/Demo/粤语/国语/英文/日语/韩语/某个 Version，就必须选择对应版本或语言。例如 query 含“Live/现场/演唱会”，要选现场版，不要选录音室原版；query 含“伴奏”，要选伴奏版。
+- 只有 query 没有明确版本或语言要求时，才默认选择真正的原版录音室版本，排除翻唱、cover、伴奏、纯音乐、钢琴/吉他等器乐版、DJ、remix、live/现场/演唱会、组曲/串烧、MV首播/解说、电台节目、合集或改编对唱版。
+即使指定了版本或语言，也优先原始录音室专辑；同一版本同时出现在原专辑和精选/合集里时，选原专辑，不要选精选/合集。
+候选列表是各平台的完整搜索结果，没有经过规则筛选，里面可能有很多变体、合集和无关歌曲。请逐条判断；如果找不到用户要求的版本，返回 {"index": -1, "reason": "原因"}，不要为了下载而强行选择别的版本。
+注意：variant/albumVariant 只是提示，不是硬性排除；当 requestedVersion/requestedLanguage 命中时，对应的变体就是正确目标。
+优先：标题一致、歌手一致、版本/语言匹配、时长正常；如果多个平台都符合，优先平台顺序靠前的平台。
 只输出 JSON，不要输出解释或 markdown：{"index": 0, "reason": "一句话原因"}。`
 
 function aiRejectionMessage(reason: string): string {
@@ -97,7 +111,12 @@ function median(values: number[]): number | null {
 function dedupe<T extends CandidateBase>(candidates: T[]): T[] {
   const seen = new Set<string>()
   return candidates.filter((candidate) => {
-    const key = `${candidate.platform}:${candidate.titleNorm}:${candidate.artistNorm}`
+    // 不能只用“歌名+歌手”去重：同一首歌的录音室版和 Live/伴奏版
+    // 归一化后歌名可能完全相同，会把用户明确要求的版本丢掉。
+    // 专辑也放进 key，避免同一 id 在精选集和原专辑里只保留一条。
+    const key = `${candidate.platform}:${candidate.song.id || 'no-id'}:${
+      candidate.titleNorm
+    }:${candidate.artistNorm}:${candidate.song.album || ''}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
@@ -216,6 +235,8 @@ async function chooseWithAi(
   }
 
   const platformOrder = [...new Set(candidates.map((candidate) => candidate.platform))]
+  const requestedVersion = detectVersionTags(query)
+  const requestedLanguage = detectLanguageTags(query)
   const messages: ChatMessage[] = [
     { role: 'system', content: AI_SYSTEM_PROMPT },
     {
@@ -223,6 +244,8 @@ async function chooseWithAi(
       content: JSON.stringify({
         query,
         platformOrder,
+        requestedVersion,
+        requestedLanguage,
         candidates: candidates.map((candidate, index) => ({
           index,
           platform: candidate.platform,
@@ -232,6 +255,8 @@ async function chooseWithAi(
           duration: candidate.duration || null,
           variant: candidate.variant,
           albumVariant: candidate.albumVariant,
+          versionTags: candidate.versionTags,
+          languageTags: candidate.languageTags,
         })),
       }),
     },
@@ -248,6 +273,35 @@ async function chooseWithAi(
     }
     if (Number.isInteger(index) && index >= 0 && index < candidates.length) {
       const chosen = candidates[index]
+      // AI 偶尔会返回和理由不一致的 index；这里做一次硬校验，
+      // 不合格就回退规则，避免下载 54 秒片段、变体或错误语言版本。
+      if (chosen.duration > 0 && chosen.duration < 60) {
+        return { kind: 'unavailable', error: 'AI 选择了过短的片段，已回退规则' }
+      }
+      if (!requestedVersion.length && !requestedLanguage.length) {
+        if (chosen.variant || chosen.albumVariant) {
+          return { kind: 'unavailable', error: 'AI 选择了疑似变体，已回退规则' }
+        }
+      } else {
+        if (!matchesVersionIntent(chosen, requestedVersion, requestedLanguage)) {
+          return { kind: 'unavailable', error: 'AI 选择的版本/语言与用户要求不符，已回退规则' }
+        }
+        // 只指定语言、没有指定版本时，优先原专辑而不是精选/合集。
+        // Live/伴奏等版本本身常来自现场专辑或伴奏专辑，不能因为 albumVariant 就否掉。
+        if (
+          requestedVersion.length === 0 &&
+          requestedLanguage.length > 0 &&
+          chosen.albumVariant &&
+          candidates.some(
+            (candidate) =>
+              candidate !== chosen &&
+              !candidate.albumVariant &&
+              matchesVersionIntent(candidate, requestedVersion, requestedLanguage)
+          )
+        ) {
+          return { kind: 'unavailable', error: 'AI 选择了精选/合集，已回退规则' }
+        }
+      }
       return {
         kind: 'picked',
         candidate: chosen,
@@ -277,7 +331,9 @@ export async function selectBestSong(
 ): Promise<SongSelection> {
   const rawQuery = query.trim()
   const terms = queryTerms(rawQuery)
-  const queryHasVersion = VERSION_RE.test(rawQuery)
+  const requestedVersion = detectVersionTags(rawQuery)
+  const requestedLanguage = detectLanguageTags(rawQuery)
+  const hasRequestedVersion = requestedVersion.length > 0 || requestedLanguage.length > 0
 
   const all: CandidateBase[] = []
   for (const result of results) {
@@ -290,7 +346,10 @@ export async function selectBestSong(
     for (const song of result.results) {
       if (!song.id || !song.title || !song.artist) continue
       const duration = Number(song.duration) || 0
+      // 60 秒以下基本是试听/片段，15 分钟以上基本是串烧；不作为可下载候选。
+      if (duration > 0 && (duration < 60 || duration > 900)) continue
       const album = String(song.album || '')
+      const haystack = `${song.title} ${album}`
       all.push({
         platform: result.platform,
         song,
@@ -300,6 +359,8 @@ export async function selectBestSong(
         info,
         variant: VERSION_RE.test(String(song.title)),
         albumVariant: VERSION_RE.test(album) || isCompilationAlbum(album),
+        versionTags: detectVersionTags(haystack),
+        languageTags: detectLanguageTags(haystack),
       })
     }
   }
@@ -329,9 +390,22 @@ export async function selectBestSong(
   }
 
   // AI 不可用或返回异常时才回退规则；规则仍然只用于兜底。
-  const ruleCandidates = candidates.filter(
-    (candidate) => !candidate.variant || queryHasVersion
+  // 用户明确要求版本/语言时，规则也只接受匹配该版本/语言的候选；
+  // 没有明确要求时，才排除标题或专辑带变体标记的候选。
+  let ruleCandidates = candidates.filter(
+    (candidate) => !candidate.variant && !candidate.albumVariant
   )
+  if (hasRequestedVersion) {
+    const matches = candidates.filter((candidate) =>
+      matchesVersionIntent(candidate, requestedVersion, requestedLanguage)
+    )
+    if (requestedVersion.length === 0 && requestedLanguage.length > 0) {
+      const preferred = matches.filter((candidate) => !candidate.albumVariant)
+      ruleCandidates = preferred.length ? preferred : matches
+    } else {
+      ruleCandidates = matches
+    }
+  }
   if (ruleCandidates.length) {
     const { artistTerms, titleTerms, ranked } = scoreCandidates(ruleCandidates, terms)
     const top = ranked[0]
@@ -371,5 +445,10 @@ export async function selectBestSong(
     throw new Error(`规则未匹配到原版${detail}，${ai.error}，未下载`)
   }
 
+  if (hasRequestedVersion) {
+    throw new Error(
+      `规则没有找到请求的版本（${[...requestedVersion, ...requestedLanguage].join('/')}），${ai.error}，未下载`
+    )
+  }
   throw new Error(`规则没有可用候选（全部疑似翻唱/变体），${ai.error}，未下载`)
 }

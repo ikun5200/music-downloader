@@ -1,3 +1,5 @@
+import type { LanguageTag, VersionTag } from '../version-intent'
+
 export type MetadataSourceId =
   | 'itunes'
   | 'netease'
@@ -35,6 +37,10 @@ export interface MetadataCandidate {
   acceptable: boolean
   /** 版本标记数量（live/remix/伴奏等）。 */
   variantFlags: number
+  /** 标题/专辑中识别出的版本类型。 */
+  versionTags?: VersionTag[]
+  /** 标题/专辑中识别出的语言版本。 */
+  languageTags?: LanguageTag[]
   titleScore?: number
   artistScore?: number
   durationScore?: number
@@ -46,6 +52,10 @@ export interface MetadataQuery {
   artist: string
   album?: string | null
   duration?: number | null
+  /** 下载时明确要求的版本，例如 live、instrumental、piano。 */
+  versionTags?: VersionTag[]
+  /** 下载时明确要求的语言版本。 */
+  languageTags?: LanguageTag[]
 }
 
 export interface MetadataScrapeResult {

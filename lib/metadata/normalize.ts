@@ -1,5 +1,6 @@
 import * as OpenCC from 'opencc-js'
 import type { MetadataCandidate, MetadataQuery, MetadataSourceId } from './types'
+import { detectLanguageTags, detectVersionTags, matchesVersionIntent } from '../version-intent'
 
 const t2s = OpenCC.Converter({ from: 'tw', to: 'cn' })
 
@@ -219,12 +220,24 @@ export function scoreCandidate(
   order: MetadataSourceId[]
 ): MetadataCandidate {
   const rawTitle = candidate.rawTitle || candidate.title
+  const album = String(candidate.album || '')
   const titleScore = matchTitle(query.title, rawTitle)
   const artistScore = matchArtist(query.artist, candidate.artist)
   const durScore = durationScore(query.duration, candidate.duration)
   const albumScore = matchAlbum(query.album, candidate.album)
   const variantFlags = countVariantFlags(rawTitle)
   const albumIsCompilation = isCompilationAlbum(candidate.album)
+  const versionTags = detectVersionTags(`${rawTitle} ${album}`)
+  const languageTags = detectLanguageTags(`${rawTitle} ${album}`)
+  const requestedVersion = query.versionTags || []
+  const requestedLanguage = query.languageTags || []
+  const versionRequested = requestedVersion.length > 0 || requestedLanguage.length > 0
+  const versionMatch = matchesVersionIntent(
+    { versionTags, languageTags },
+    requestedVersion,
+    requestedLanguage
+  )
+  const albumVersionTags = detectVersionTags(album)
 
   const reasons: string[] = []
   if (titleScore >= 0.99) reasons.push('歌名完全一致')
@@ -239,33 +252,40 @@ export function scoreCandidate(
   if (albumScore > 0) reasons.push('专辑一致')
   else if (query.album && candidate.album) reasons.push('专辑不一致')
   if (albumIsCompilation) reasons.push('合集/精选专辑')
+  if (versionRequested) reasons.push(versionMatch ? '版本匹配' : '版本不符')
+  else if (albumVersionTags.length) reasons.push('专辑含版本标记')
   if (variantFlags > 0) reasons.push('含版本标记')
 
   const albumMismatch = query.album && candidate.album && albumScore < 0.5 ? 12 : 0
   const compilationPenalty = albumIsCompilation ? 30 : 0
+  const versionBonus = versionRequested ? (versionMatch ? 12 : -40) : 0
   const base =
     titleScore * 50 +
     artistScore * 30 +
     durScore * 15 +
     albumScore * 5 +
-    sourceBonus(candidate.source, order) -
+    sourceBonus(candidate.source, order) +
+    versionBonus -
     albumMismatch -
     compilationPenalty
-  const score = Math.round((base - Math.min(variantFlags, 3) * 20) * 10) / 10
+  // 用户明确要 Live/伴奏等版本时，版本标记本身不应再被当成扣分项。
+  const variantPenalty = versionRequested && versionMatch ? 0 : Math.min(variantFlags, 3) * 20
+  const score = Math.round((base - variantPenalty) * 10) / 10
 
   const durationOk = !query.duration || !candidate.duration || durScore >= 0.35
   const artistOk = !query.artist.trim() || artistScore >= 0.7
-  const acceptable =
-    titleScore >= 0.75 &&
-    artistOk &&
-    variantFlags === 0 &&
-    durationOk
+  const variantOk = versionRequested
+    ? versionMatch
+    : variantFlags === 0 && albumVersionTags.length === 0
+  const acceptable = titleScore >= 0.75 && artistOk && variantOk && durationOk
 
   return {
     ...candidate,
     score,
     acceptable,
     variantFlags,
+    versionTags,
+    languageTags,
     titleScore,
     artistScore,
     durationScore: durScore,
