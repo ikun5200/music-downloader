@@ -150,57 +150,6 @@ const EN_CREDIT_BY_RE =
 const COPYRIGHT_RE = /^(?:[℗©]|\(p\)|\(c\)|copyright\b|未经许可|未经授权|本歌曲|版权方|禁止翻唱|不得翻唱)/i
 const SEPARATOR_RE = /^[\s\-_=*~—–]{3,}$/
 
-const PERFORMER_LABEL_RE = /^[\p{L}·.\s]{1,16}\s*[:：]$/u
-const PERFORMER_PREFIX_RE = /^([\p{L}·.\s]{1,16})\s*[:：]\s*(.+)$/u
-
-function performerNames(artist?: string): Set<string> {
-  const names = new Set([
-    '合',
-    '合唱',
-    '全体',
-    '群星',
-    '男',
-    '女',
-    '男声',
-    '女声',
-    'chorus',
-    'rap',
-    'hook',
-    'lay',
-    'jj',
-    '韩红',
-    '林俊杰',
-    '张艺兴',
-    '周杰伦',
-    '邓紫棋',
-    '金莎',
-    '杨瑞代',
-    '费玉清',
-  ])
-  for (const part of String(artist || '').split(/\s*(?:\/|&|,|，|、|;|；|\+)\s*/)) {
-    const name = part.trim().toLowerCase()
-    if (name) names.add(name)
-  }
-  return names
-}
-
-function stripPerformerPrefix(text: string, artist?: string): string {
-  const match = text.match(PERFORMER_PREFIX_RE)
-  if (!match) return text
-  const prefix = match[1].trim().toLowerCase()
-  if (!performerNames(artist).has(prefix)) return text
-  return match[2].trim()
-}
-
-function rewriteLyricLine(raw: string, artist?: string): string {
-  const normalized = normalizeTimestampPrefix(raw) || raw
-  const match = normalized.match(TIMESTAMP_PREFIX_RE)
-  if (match) {
-    return `${match[1]}${stripPerformerPrefix(match[2].trim(), artist)}`
-  }
-  return stripPerformerPrefix(normalized, artist)
-}
-
 function parseLine(raw: string): ParsedLine {
   const match = raw.match(TIMESTAMP_PREFIX_RE)
   if (match) {
@@ -256,11 +205,7 @@ function isTitleLine(text: string, title?: string, artist?: string): boolean {
 function isHeaderNoise(text: string, title?: string, artist?: string): boolean {
   const value = text.trim()
   if (!value) return true
-  return (
-    isCreditText(value) ||
-    PERFORMER_LABEL_RE.test(value) ||
-    isTitleLine(value, title, artist)
-  )
+  return isCreditText(value) || isTitleLine(value, title, artist)
 }
 
 function stampToMs(stamp: string): number {
@@ -339,15 +284,13 @@ export function cleanLyrics(
     }
     if (index < start) continue
     if (line.kind === 'lyric') {
-      // 制作人/演唱者标签即使出现在正文中间也去掉，例如“JJ：”“合：”。
-      if (isCreditText(line.text) || PERFORMER_LABEL_RE.test(line.text)) continue
-      const rewritten = rewriteLyricLine(line.raw, options.artist)
+      if (isCreditText(line.text)) continue
+      const rewritten = normalizeTimestampPrefix(line.raw) || line.raw
       output.push(simplify ? toSimplified(rewritten) : rewritten)
       continue
     }
     if (isCreditText(line.text)) continue
-    const rewritten = stripPerformerPrefix(line.raw, options.artist)
-    output.push(simplify ? toSimplified(rewritten) : rewritten)
+    output.push(simplify ? toSimplified(line.raw) : line.raw)
   }
 
   return output.join('\n').replace(/^\n+|\n+$/g, '').trim()

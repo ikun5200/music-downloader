@@ -18,7 +18,7 @@ describe('cleanLyrics', () => {
     expect(cleaned).toBe('[00:39.21]绝对的完美一双手')
   })
 
-  it('处理“词 LYRICS：”“曲 COMPOSER :”和演唱者标签', () => {
+  it('处理“词 LYRICS：”“曲 COMPOSER :”，保留演唱者标签', () => {
     const raw = [
       '[00:00.00]为你揭晓 - 张艺兴/林俊杰',
       '[00:00.92]词 LYRICS：林怡凤',
@@ -35,10 +35,11 @@ describe('cleanLyrics', () => {
     expect(cleaned).toContain('[00:18.26]早已 不可考')
     expect(cleaned).toContain('[00:37.81]真不少')
     expect(cleaned).toContain('[01:12.81]不想说的你懂就好了')
-    expect(cleaned).not.toContain('LAY：')
-    expect(cleaned).not.toContain('JJ：')
-    expect(cleaned).not.toContain('合：')
+    expect(cleaned).toContain('LAY：')
+    expect(cleaned).toContain('JJ：')
+    expect(cleaned).toContain('合：')
     expect(cleaned).not.toContain('LYRICS')
+    expect(cleaned).not.toContain('PRODUCER')
   })
 
   it('把中文歌词转成简体', () => {
@@ -65,7 +66,7 @@ describe('cleanLyrics', () => {
     expect(cleaned).toBe('[04:07.015]爱是时间的古董')
   })
 
-  it('清理人声录音/封面设计并去掉歌词行里的演唱者前缀', () => {
+  it('清理人声录音/封面设计，保留歌词行里的演唱者前缀', () => {
     const raw = [
       '[00:04.00]人声录音 : 林俊杰/瞿然',
       '[00:06.00]封面设计 : 方亮',
@@ -78,10 +79,10 @@ describe('cleanLyrics', () => {
     const cleaned = cleanLyrics(raw, { title: '飞云之下', artist: '韩红/林俊杰' })
     expect(cleaned).toBe(
       [
-        '[00:20.51]风 让云长出花 漫天的花',
+        '[00:20.51]韩红：风 让云长出花 漫天的花',
         '[00:27.10]无声开在乌云之下',
-        '[00:37.98]漫步在人海的人 你过得好吗',
-        '[00:52.74]它多久没说话',
+        '[00:37.98]林俊杰：漫步在人海的人 你过得好吗',
+        '[00:52.74]合：它多久没说话',
       ].join('\n')
     )
   })
