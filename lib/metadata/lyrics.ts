@@ -35,6 +35,7 @@ const CN_CREDIT_LABELS = [
   '人声录音',
   '人声编辑',
   '封面设计',
+  '封面企划',
   '视觉设计',
   '平面设计',
   '字体设计',
@@ -195,9 +196,15 @@ function isTitleLine(text: string, title?: string, artist?: string): boolean {
   const parts = value.split(/\s*[-–—]\s*/)
   if (parts.length >= 2) {
     const keys = parts.map((part) => titleKey(part)).filter(Boolean)
-    const maxLength =
-      (title || '').length + (artist || '').length + 16
-    if (keys.includes(titleKeyValue) && value.length <= maxLength) return true
+    if (!keys.includes(titleKeyValue)) return false
+    const artistParts = String(artist || '')
+      .split(/\s*(?:\/|&|,|，|、|;|；)\s*/)
+      .filter(Boolean)
+    return (
+      parts.length >= 2 ||
+      artistParts.some((part) => value.includes(part)) ||
+      value.length <= (title || '').length + (artist || '').length + 16
+    )
   }
   return false
 }
