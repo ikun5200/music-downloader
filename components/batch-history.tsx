@@ -114,7 +114,10 @@ export function BatchHistory() {
     if (busy) return
     const selectionFailed = batch.items.filter((item) => item.status === 'failed').length
     const downloadFailed = batch.items.filter(
-      (item) => item.status === 'queued' && item.downloadStatus === 'failed'
+      (item) =>
+        item.status === 'queued' &&
+        !!item.downloadJobId &&
+        (!item.downloadStatus || item.downloadStatus === 'failed')
     ).length
     if (
       !window.confirm(
@@ -167,7 +170,9 @@ export function BatchHistory() {
           const retryable = batch.items.filter(
             (item) =>
               item.status === 'failed' ||
-              (item.status === 'queued' && item.downloadStatus === 'failed')
+              (item.status === 'queued' &&
+                !!item.downloadJobId &&
+                (!item.downloadStatus || item.downloadStatus === 'failed'))
           ).length
           const canRetry =
             retryable > 0 &&
