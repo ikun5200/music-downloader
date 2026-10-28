@@ -358,6 +358,25 @@ describe('batch song selector', () => {
     expect(selection.aiUsed).toBe(false)
   })
 
+  it('does not treat a song title containing 演唱会 as a live request', async () => {
+    const selection = await selectBestSong(
+      '她来听我的演唱会 张学友',
+      results([
+        [
+          'kw',
+          [
+            song('kw', '她来听我的演唱会', '张学友', 260, '做人爱自己'),
+            song('kw', '她来听我的演唱会 (Live)', '张学友', 270, '活出生命Live演唱会'),
+          ],
+        ],
+      ]),
+      info,
+      { aiConfig: null }
+    )
+    expect(selection.song.title).toBe('她来听我的演唱会')
+    expect(selection.song.album).toBe('做人爱自己')
+  })
+
   it('prefers the configured platform order when scores are close', async () => {
     const orderedInfo = new Map(info)
     orderedInfo.set('kw', { ...info.get('kw')!, order: 1 })

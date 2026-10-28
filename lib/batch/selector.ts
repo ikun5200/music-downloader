@@ -6,6 +6,8 @@ import { getAiConfig, type AiConfig } from '../settings'
 import { isCompilationAlbum } from '../metadata/normalize'
 import {
   detectLanguageTags,
+  detectQueryLanguageTags,
+  detectQueryVersionTags,
   detectVersionTags,
   matchesVersionIntent,
   type LanguageTag,
@@ -60,10 +62,6 @@ interface PreparedCandidate extends CandidateBase {
 interface ScoredCandidate extends CandidateBase {
   score?: number
 }
-
-// 这些是“版本变体”标记；用户没明确要这个版本时，规则路径会排除。
-const VERSION_RE =
-  /(翻唱|cover|伴奏|纯音乐|钢琴|吉他|古筝|笛子|口琴|翻弹|演奏|铃声|片段|试听|组曲|串烧|联唱|medley|mv首播|首播|预告|采访|电台|节目|改编|对唱|remix|\bdj\b|\blive\b|现场|演唱会|音乐会|音乐节|晚会|毕业歌会|春晚|重制|重录|新版|\bversion\b|0\.8x|加速版|慢速版|降调|升调|混音)/i
 
 const GENERIC_ARTIST_RE =
   /(音乐调频|歌单|电台|音乐台|音乐信箱|宝藏|推荐|精选|合集|频道|fm|radio|翻唱集|播放器)/i
@@ -235,8 +233,8 @@ async function chooseWithAi(
   }
 
   const platformOrder = [...new Set(candidates.map((candidate) => candidate.platform))]
-  const requestedVersion = detectVersionTags(query)
-  const requestedLanguage = detectLanguageTags(query)
+  const requestedVersion = detectQueryVersionTags(query)
+  const requestedLanguage = detectQueryLanguageTags(query)
   const messages: ChatMessage[] = [
     { role: 'system', content: AI_SYSTEM_PROMPT },
     {
@@ -331,8 +329,8 @@ export async function selectBestSong(
 ): Promise<SongSelection> {
   const rawQuery = query.trim()
   const terms = queryTerms(rawQuery)
-  const requestedVersion = detectVersionTags(rawQuery)
-  const requestedLanguage = detectLanguageTags(rawQuery)
+  const requestedVersion = detectQueryVersionTags(rawQuery)
+  const requestedLanguage = detectQueryLanguageTags(rawQuery)
   const hasRequestedVersion = requestedVersion.length > 0 || requestedLanguage.length > 0
 
   const all: CandidateBase[] = []
@@ -349,7 +347,19 @@ export async function selectBestSong(
       // 60 秒以下基本是试听/片段，15 分钟以上基本是串烧；不作为可下载候选。
       if (duration > 0 && (duration < 60 || duration > 900)) continue
       const album = String(song.album || '')
-      const haystack = `${song.title} ${album}`
+      const titleVersionTags = detectQueryVersionTags(String(song.title))
+      const titleLanguageTags = detectQueryLanguageTags(String(song.title))
+      const albumDiffers = !!album && normalizeText(album) !== normalizeText(song.title)
+      const albumVersionTags = album
+        ? albumDiffers
+          ? detectVersionTags(album)
+          : detectQueryVersionTags(album)
+        : []
+      const albumLanguageTags = album
+        ? albumDiffers
+          ? detectLanguageTags(album)
+          : detectQueryLanguageTags(album)
+        : []
       all.push({
         platform: result.platform,
         song,
@@ -357,10 +367,10 @@ export async function selectBestSong(
         artistNorm: normalizeText(song.artist),
         duration,
         info,
-        variant: VERSION_RE.test(String(song.title)),
-        albumVariant: VERSION_RE.test(album) || isCompilationAlbum(album),
-        versionTags: detectVersionTags(haystack),
-        languageTags: detectLanguageTags(haystack),
+        variant: titleVersionTags.length > 0,
+        albumVariant: albumVersionTags.length > 0 || isCompilationAlbum(album),
+        versionTags: [...new Set([...titleVersionTags, ...albumVersionTags])],
+        languageTags: [...new Set([...titleLanguageTags, ...albumLanguageTags])],
       })
     }
   }
