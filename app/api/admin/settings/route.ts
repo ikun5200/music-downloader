@@ -36,6 +36,7 @@ const schema = z.object({
   metadataWriteLyrics: z.boolean().optional(),
   lyricsCleanCredits: z.boolean().optional(),
   lyricsSimplify: z.boolean().optional(),
+  lyricsAiCleanEnabled: z.boolean().optional(),
   metadataAiEnabled: z.boolean().optional(),
 })
 

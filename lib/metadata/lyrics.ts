@@ -7,6 +7,8 @@ export interface CleanLyricsOptions {
   cleanCredits?: boolean
   /** 把中文歌词统一转成简体。 */
   simplify?: boolean
+  /** AI 识别出的第一句歌词行号；传入后跳过规则头部判断。 */
+  startLineIndex?: number
 }
 
 interface ParsedLine {
@@ -254,31 +256,40 @@ export function cleanLyrics(
   }
 
   const parsed = text.split('\n').map(parseLine)
-  let start = 0
+  const aiStart =
+    typeof options.startLineIndex === 'number' &&
+    Number.isInteger(options.startLineIndex) &&
+    options.startLineIndex >= 0 &&
+    options.startLineIndex < parsed.length
+      ? options.startLineIndex
+      : null
+  let start = aiStart ?? 0
 
-  while (start < parsed.length) {
-    const line = parsed[start]
-    if (line.kind === 'tag') {
-      // offset 会在输出阶段保留；这里只是跳过它继续识别后面的头部。
-      start++
-      continue
-    }
-    if (line.kind === 'text') {
+  if (aiStart == null) {
+    while (start < parsed.length) {
+      const line = parsed[start]
+      if (line.kind === 'tag') {
+        // offset 会在输出阶段保留；这里只是跳过它继续识别后面的头部。
+        start++
+        continue
+      }
+      if (line.kind === 'text') {
+        if (isHeaderNoise(line.text, options.title, options.artist)) {
+          start++
+          continue
+        }
+        break
+      }
+      if (!line.text) {
+        start++
+        continue
+      }
       if (isHeaderNoise(line.text, options.title, options.artist)) {
         start++
         continue
       }
       break
     }
-    if (!line.text) {
-      start++
-      continue
-    }
-    if (isHeaderNoise(line.text, options.title, options.artist)) {
-      start++
-      continue
-    }
-    break
   }
 
   const output: string[] = []

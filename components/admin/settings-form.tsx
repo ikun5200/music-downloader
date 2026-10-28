@@ -84,6 +84,7 @@ export function SettingsForm({
   const [metadataWriteLyrics, setMetadataWriteLyrics] = useState(initial.metadataWriteLyrics)
   const [lyricsCleanCredits, setLyricsCleanCredits] = useState(initial.lyricsCleanCredits)
   const [lyricsSimplify, setLyricsSimplify] = useState(initial.lyricsSimplify)
+  const [lyricsAiCleanEnabled, setLyricsAiCleanEnabled] = useState(initial.lyricsAiCleanEnabled)
   const [metadataAiEnabled, setMetadataAiEnabled] = useState(initial.metadataAiEnabled)
   const [rescraping, setRescraping] = useState(false)
   const [testingAi, setTestingAi] = useState(false)
@@ -163,6 +164,7 @@ export function SettingsForm({
           metadataWriteLyrics,
           lyricsCleanCredits,
           lyricsSimplify,
+          lyricsAiCleanEnabled,
           metadataAiEnabled,
         }),
       })
@@ -623,6 +625,20 @@ export function SettingsForm({
                 checked={lyricsSimplify}
                 onChange={setLyricsSimplify}
                 label="歌词转简体"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-[11px] text-white/55">AI 识别歌词前缀/制作信息</div>
+                <div className="mt-0.5 text-[10px] leading-4 text-white/25">
+                  优先让 AI 判断第一句歌词和制作信息；演唱者前缀（韩红：、林俊杰：、合：）会保留，AI 不可用时回退规则。
+                </div>
+              </div>
+              <Switch
+                checked={lyricsAiCleanEnabled}
+                onChange={setLyricsAiCleanEnabled}
+                disabled={!aiReady}
+                label="AI 识别歌词前缀/制作信息"
               />
             </div>
             <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">

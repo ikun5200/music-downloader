@@ -27,6 +27,7 @@ export interface AppSettings {
   metadataWriteLyrics: boolean
   lyricsCleanCredits: boolean
   lyricsSimplify: boolean
+  lyricsAiCleanEnabled: boolean
   metadataAiEnabled: boolean
 }
 
@@ -72,6 +73,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   metadataWriteLyrics: true,
   lyricsCleanCredits: true,
   lyricsSimplify: true,
+  lyricsAiCleanEnabled: true,
   metadataAiEnabled: true,
 }
 
@@ -181,6 +183,7 @@ function parseSettings(rows: { key: string; value: string }[]): AppSettings {
     metadataWriteLyrics: (pick('metadataWriteLyrics') ?? 'true') !== 'false',
     lyricsCleanCredits: (pick('lyricsCleanCredits') ?? 'true') !== 'false',
     lyricsSimplify: (pick('lyricsSimplify') ?? 'true') !== 'false',
+    lyricsAiCleanEnabled: (pick('lyricsAiCleanEnabled') ?? 'true') !== 'false',
     metadataAiEnabled: (pick('metadataAiEnabled') ?? 'true') !== 'false',
   }
 }
@@ -273,6 +276,9 @@ export async function setSettings(values: SettingsPatch) {
   }
   if (values.lyricsSimplify != null) {
     entries.push(['lyricsSimplify', String(values.lyricsSimplify)])
+  }
+  if (values.lyricsAiCleanEnabled != null) {
+    entries.push(['lyricsAiCleanEnabled', String(values.lyricsAiCleanEnabled)])
   }
   if (values.metadataAiEnabled != null) {
     entries.push(['metadataAiEnabled', String(values.metadataAiEnabled)])

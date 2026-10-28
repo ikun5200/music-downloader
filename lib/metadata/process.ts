@@ -3,6 +3,7 @@ import type { DownloadJob } from '@prisma/client'
 import { getAiConfig, type AppSettings } from '../settings'
 import { safeJson } from '../utils'
 import { scrapeMetadata } from './scrape'
+import { cleanLyricsWithAi } from './lyrics-ai'
 import { writeMetadataTags } from './tag'
 
 export interface MetadataProcessResult {
@@ -63,17 +64,33 @@ export async function processMetadataForJob(
     }
 
     const candidate = result.candidate
+    const lyricsResult = candidate.lyrics
+      ? await cleanLyricsWithAi(candidate.lyrics, {
+          title: candidate.title,
+          artist: candidate.artist,
+          cleanCredits: settings.lyricsCleanCredits,
+          simplify: settings.lyricsSimplify,
+          aiEnabled: settings.lyricsAiCleanEnabled,
+          aiConfig,
+        })
+      : null
+    if (lyricsResult) candidate.lyrics = lyricsResult.text
+
     const written = await writeMetadataTags(absolutePath, candidate, {
       writeInfo: settings.metadataWriteInfo,
       writeCover: settings.metadataWriteCover,
       writeLyrics: settings.metadataWriteLyrics,
-      lyricsCleanCredits: settings.lyricsCleanCredits,
-      lyricsSimplify: settings.lyricsSimplify,
+      // 歌词已在这里按 AI 优先的规则处理完，写标签时不要再跑一次规则清理。
+      lyricsCleanCredits: false,
+      lyricsSimplify: false,
     })
 
     return {
       status: written.ok ? 'success' : written.partial ? 'partial' : 'failed',
-      note: [result.note, written.note].filter(Boolean).join('；').slice(0, 1000),
+      note: [result.note, lyricsResult?.note, written.note]
+        .filter(Boolean)
+        .join('；')
+        .slice(0, 1000),
       source: candidate.source,
       title: candidate.title || null,
       artist: candidate.artist || null,
