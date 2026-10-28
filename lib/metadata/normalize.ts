@@ -1,6 +1,11 @@
 import * as OpenCC from 'opencc-js'
 import type { MetadataCandidate, MetadataQuery, MetadataSourceId } from './types'
-import { detectLanguageTags, detectVersionTags, matchesVersionIntent } from '../version-intent'
+import {
+  detectAlbumVersionTags,
+  detectCandidateLanguageTags,
+  detectCandidateVersionTags,
+  matchesVersionIntent,
+} from '../version-intent'
 
 const t2s = OpenCC.Converter({ from: 'tw', to: 'cn' })
 
@@ -227,8 +232,8 @@ export function scoreCandidate(
   const albumScore = matchAlbum(query.album, candidate.album)
   const variantFlags = countVariantFlags(rawTitle)
   const albumIsCompilation = isCompilationAlbum(candidate.album)
-  const versionTags = detectVersionTags(`${rawTitle} ${album}`)
-  const languageTags = detectLanguageTags(`${rawTitle} ${album}`)
+  const versionTags = detectCandidateVersionTags(rawTitle, album)
+  const languageTags = detectCandidateLanguageTags(rawTitle, album)
   const requestedVersion = query.versionTags || []
   const requestedLanguage = query.languageTags || []
   const versionRequested = requestedVersion.length > 0 || requestedLanguage.length > 0
@@ -237,7 +242,7 @@ export function scoreCandidate(
     requestedVersion,
     requestedLanguage
   )
-  const albumVersionTags = detectVersionTags(album)
+  const albumVersionTags = detectAlbumVersionTags(album)
 
   const reasons: string[] = []
   if (titleScore >= 0.99) reasons.push('歌名完全一致')

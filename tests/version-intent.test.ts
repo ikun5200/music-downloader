@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  detectAlbumVersionTags,
   detectQueryLanguageTags,
   detectQueryVersionTags,
   detectVersionTags,
+  isVersionMismatch,
 } from '../lib/version-intent'
 
 describe('query version intent', () => {
@@ -24,5 +26,20 @@ describe('query version intent', () => {
   it('detects explicit language requests', () => {
     expect(detectQueryLanguageTags('K歌之王 粤语 陈奕迅')).toContain('cantonese')
     expect(detectQueryLanguageTags('K歌之王（国语版）陈奕迅')).toContain('mandarin')
+  })
+
+  it('handles album names that merely contain Live or Deluxe Version', () => {
+    expect(detectAlbumVersionTags('Live For Today')).toEqual([])
+    expect(detectAlbumVersionTags('我要快乐 (Deluxe Version)')).toEqual([])
+    expect(detectAlbumVersionTags('Eason Third Encounter Concert Live 2003')).toContain('live')
+    expect(detectAlbumVersionTags('2003演唱会')).toContain('live')
+  })
+
+  it('flags downloaded versions that do not match the playlist request', () => {
+    expect(isVersionMismatch('K歌之王 (Live) 陈奕迅', 'K歌之王', '打得火热')).toBe(true)
+    expect(isVersionMismatch('K歌之王 (Live) 陈奕迅', 'K歌之王 (Live)', 'Third Encounter Live')).toBe(false)
+    expect(isVersionMismatch('K歌之王 陈奕迅', 'K歌之王 (Live)', 'Third Encounter Live')).toBe(true)
+    expect(isVersionMismatch('K歌之王 陈奕迅', 'K歌之王', '打得火热')).toBe(false)
+    expect(isVersionMismatch('她来听我的演唱会 张学友', '她来听我的演唱会', '走过1999')).toBe(false)
   })
 })

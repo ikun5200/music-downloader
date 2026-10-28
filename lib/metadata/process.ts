@@ -1,12 +1,10 @@
 import fs from 'fs/promises'
 import type { DownloadJob } from '@prisma/client'
 import { getAiConfig, type AppSettings } from '../settings'
-import { normalizeText, safeJson } from '../utils'
+import { safeJson } from '../utils'
 import {
-  detectLanguageTags,
-  detectQueryLanguageTags,
-  detectQueryVersionTags,
-  detectVersionTags,
+  detectCandidateLanguageTags,
+  detectCandidateVersionTags,
 } from '../version-intent'
 import { scrapeMetadata } from './scrape'
 import { cleanLyricsWithAi } from './lyrics-ai'
@@ -51,30 +49,14 @@ export async function processMetadataForJob(
       aiConfig.apiKey
     )
 
-    const album = String(job.album || '')
-    // 歌名本身可能包含“演唱会”等词；歌名只认括号/独立版本词，专辑才做全文识别。
-    // 同名专辑（单曲）跳过全文识别，避免把歌名里的词误当成版本。
-    const albumDiffers = !!album && normalizeText(album) !== normalizeText(job.title)
-    const versionTags = [
-      ...new Set([
-        ...detectQueryVersionTags(job.title),
-        ...(albumDiffers ? detectVersionTags(album) : []),
-      ]),
-    ]
-    const languageTags = [
-      ...new Set([
-        ...detectQueryLanguageTags(job.title),
-        ...(albumDiffers ? detectLanguageTags(album) : []),
-      ]),
-    ]
     const result = await scrapeMetadata({
       query: {
         title: job.title,
         artist: job.artist,
         album: job.album,
         duration: Number.isFinite(duration) && duration > 0 ? duration : null,
-        versionTags,
-        languageTags,
+        versionTags: detectCandidateVersionTags(job.title, job.album),
+        languageTags: detectCandidateLanguageTags(job.title, job.album),
       },
       sourceOrder: settings.metadataSourceOrder,
       aiConfig: aiEnabled ? aiConfig : null,

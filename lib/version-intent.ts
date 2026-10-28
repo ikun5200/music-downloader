@@ -44,6 +44,27 @@ export function detectLanguageTags(text: string): LanguageTag[] {
   return detectTags(text, LANGUAGE_TAG_RULES)
 }
 
+// 专辑名是描述性的，可以做全文识别；但要避开 “Live For Today” 这种
+// 本身是录音室专辑名、只是恰好含 Live 的情况，以及 Deluxe Version。
+const ALBUM_VERSION_RULES: Array<[VersionTag, RegExp]> = [
+  [
+    'live',
+    /(?:[\(\[【（]\s*live|live\s*(?:at|in|from|concert|session|version|album|\d{4})|concert\s+live|\blive\s*$|现场|演唱会|音乐会|音乐节|unplugged|拉阔)/i,
+  ],
+  ['instrumental', /伴奏|纯音乐|instrumental|karaoke|ktv|消音|钢琴|吉他/i],
+  ['piano', /钢琴|piano/i],
+  ['guitar', /吉他|guitar/i],
+  ['remix', /remix|混音|\bdj\b|加速版|慢速版|降调|升调|0\.8x/i],
+  ['cover', /翻唱|cover/i],
+  ['acoustic', /acoustic|不插电/i],
+  ['demo', /demo|小样/i],
+  ['alternate', /重制|重录|新版|新编|(?<!deluxe\s)\bversion\b/i],
+]
+
+export function detectAlbumVersionTags(text: string): VersionTag[] {
+  return detectTags(text, ALBUM_VERSION_RULES)
+}
+
 const BRACKET_RE = /[\(\[【（]([^\)\]】）]*)[\)\]】）]/g
 const QUERY_SPLIT_RE = /[\s,，、/&]+/
 
@@ -105,6 +126,64 @@ export function detectQueryLanguageTags(query: string): LanguageTag[] {
     }
   }
   return [...tags]
+}
+
+/** 已选歌曲的版本标签：歌名只认括号/独立版本词，专辑才做全文识别。 */
+export function detectCandidateVersionTags(
+  title: string,
+  album?: string | null
+): VersionTag[] {
+  const albumText = String(album || '')
+  const albumDiffers = !!albumText && albumText.toLowerCase() !== title.toLowerCase()
+  return [
+    ...new Set([
+      ...detectQueryVersionTags(title),
+      ...(albumText
+        ? albumDiffers
+          ? detectAlbumVersionTags(albumText)
+          : detectQueryVersionTags(albumText)
+        : []),
+    ]),
+  ]
+}
+
+export function detectCandidateLanguageTags(
+  title: string,
+  album?: string | null
+): LanguageTag[] {
+  const albumText = String(album || '')
+  const albumDiffers = !!albumText && albumText.toLowerCase() !== title.toLowerCase()
+  return [
+    ...new Set([
+      ...detectQueryLanguageTags(title),
+      ...(albumText
+        ? albumDiffers
+          ? detectLanguageTags(albumText)
+          : detectQueryLanguageTags(albumText)
+        : []),
+    ]),
+  ]
+}
+
+/** 歌单明确要求了版本/语言，但下载选中的版本不一致；或没要求版本却选了变体。 */
+export function isVersionMismatch(
+  line: string,
+  title?: string | null,
+  album?: string | null
+): boolean {
+  if (!title) return false
+  const expectedVersion = detectQueryVersionTags(line)
+  const expectedLanguage = detectQueryLanguageTags(line)
+  const selectedVersion = detectCandidateVersionTags(title, album)
+  const selectedLanguage = detectCandidateLanguageTags(title, album)
+  if (expectedVersion.length || expectedLanguage.length) {
+    return !matchesVersionIntent(
+      { versionTags: selectedVersion, languageTags: selectedLanguage },
+      expectedVersion,
+      expectedLanguage
+    )
+  }
+  return selectedVersion.length > 0
 }
 
 export function isVersionCompatible(

@@ -5,10 +5,11 @@ import { chatCompletion, extractJsonObject, type ChatMessage } from '../ai/clien
 import { getAiConfig, type AiConfig } from '../settings'
 import { isCompilationAlbum } from '../metadata/normalize'
 import {
-  detectLanguageTags,
+  detectAlbumVersionTags,
+  detectCandidateLanguageTags,
+  detectCandidateVersionTags,
   detectQueryLanguageTags,
   detectQueryVersionTags,
-  detectVersionTags,
   matchesVersionIntent,
   type LanguageTag,
   type VersionTag,
@@ -348,18 +349,7 @@ export async function selectBestSong(
       if (duration > 0 && (duration < 60 || duration > 900)) continue
       const album = String(song.album || '')
       const titleVersionTags = detectQueryVersionTags(String(song.title))
-      const titleLanguageTags = detectQueryLanguageTags(String(song.title))
-      const albumDiffers = !!album && normalizeText(album) !== normalizeText(song.title)
-      const albumVersionTags = album
-        ? albumDiffers
-          ? detectVersionTags(album)
-          : detectQueryVersionTags(album)
-        : []
-      const albumLanguageTags = album
-        ? albumDiffers
-          ? detectLanguageTags(album)
-          : detectQueryLanguageTags(album)
-        : []
+      const albumVersionTags = album ? detectAlbumVersionTags(album) : []
       all.push({
         platform: result.platform,
         song,
@@ -369,8 +359,8 @@ export async function selectBestSong(
         info,
         variant: titleVersionTags.length > 0,
         albumVariant: albumVersionTags.length > 0 || isCompilationAlbum(album),
-        versionTags: [...new Set([...titleVersionTags, ...albumVersionTags])],
-        languageTags: [...new Set([...titleLanguageTags, ...albumLanguageTags])],
+        versionTags: detectCandidateVersionTags(String(song.title), album),
+        languageTags: detectCandidateLanguageTags(String(song.title), album),
       })
     }
   }

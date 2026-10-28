@@ -25,14 +25,14 @@ export async function POST(
   }
   if (result.status === 'not_retryable') {
     return NextResponse.json(
-      { code: 409, message: '当前批量任务状态不支持重试失败项' },
+      { code: 409, message: '当前批量任务状态不支持重试问题项' },
       { status: 409 }
     )
   }
   if (result.status === 'none') {
     return NextResponse.json({
       code: 0,
-      data: { ...result, note: '没有可重试的失败项' },
+      data: { ...result, note: '没有可重试的问题项' },
     })
   }
 

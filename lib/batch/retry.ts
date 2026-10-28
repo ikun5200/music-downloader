@@ -1,17 +1,22 @@
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '../db'
+import { isVersionMismatch } from '../version-intent'
 
 export interface RetryBatchResult {
   status: 'ok' | 'not_found' | 'busy' | 'not_retryable' | 'none'
   retried: number
   selectionFailed: number
   downloadFailed: number
+  versionMismatch: number
 }
 
 export interface RetryItem {
   id: string
   status: string
   downloadJobId: string | null
+  line: string
+  title: string | null
+  album: string | null
 }
 
 export function isRetryableBatchItem(
@@ -44,16 +49,27 @@ export async function retryFailedBatchItems(
 ): Promise<RetryBatchResult> {
   const batch = await db.batchJob.findUnique({
     where: { id: batchId },
-    include: { items: { select: { id: true, status: true, downloadJobId: true } } },
+    include: {
+      items: {
+        select: {
+          id: true,
+          status: true,
+          downloadJobId: true,
+          line: true,
+          title: true,
+          album: true,
+        },
+      },
+    },
   })
   if (!batch) {
-    return { status: 'not_found', retried: 0, selectionFailed: 0, downloadFailed: 0 }
+    return { status: 'not_found', retried: 0, selectionFailed: 0, downloadFailed: 0, versionMismatch: 0 }
   }
   if (['queued', 'running', 'paused'].includes(batch.status)) {
-    return { status: 'busy', retried: 0, selectionFailed: 0, downloadFailed: 0 }
+    return { status: 'busy', retried: 0, selectionFailed: 0, downloadFailed: 0, versionMismatch: 0 }
   }
   if (!['completed', 'failed'].includes(batch.status)) {
-    return { status: 'not_retryable', retried: 0, selectionFailed: 0, downloadFailed: 0 }
+    return { status: 'not_retryable', retried: 0, selectionFailed: 0, downloadFailed: 0, versionMismatch: 0 }
   }
 
   const jobIds = [
@@ -70,15 +86,26 @@ export async function retryFailedBatchItems(
       })
     : []
   const jobStatus = new Map(jobs.map((job) => [job.id, job.status]))
-  const retryItems = batch.items.filter((item) => isRetryableBatchItem(item, jobStatus))
+  const statusRetry = batch.items.filter((item) => isRetryableBatchItem(item, jobStatus))
+  const statusRetryIds = new Set(statusRetry.map((item) => item.id))
+  // 成功下载但版本选错的条目（例如点名单曲要 Live，却下了录音室版）。
+  const versionRetry = batch.items.filter(
+    (item) =>
+      !statusRetryIds.has(item.id) &&
+      isVersionMismatch(item.line, item.title, item.album)
+  )
+  const retryItems = [
+    ...new Map([...statusRetry, ...versionRetry].map((item) => [item.id, item])).values(),
+  ]
   if (!retryItems.length) {
-    return { status: 'none', retried: 0, selectionFailed: 0, downloadFailed: 0 }
+    return { status: 'none', retried: 0, selectionFailed: 0, downloadFailed: 0, versionMismatch: 0 }
   }
 
-  const selectionFailed = retryItems.filter(
+  const selectionFailed = statusRetry.filter(
     (item) => item.status === 'failed' || item.status === 'searching'
   ).length
-  const downloadFailed = retryItems.length - selectionFailed
+  const downloadFailed = statusRetry.length - selectionFailed
+  const versionMismatch = versionRetry.length
 
   await db.$transaction(async (tx) => {
     await tx.batchItem.updateMany({
@@ -121,5 +148,6 @@ export async function retryFailedBatchItems(
     retried: retryItems.length,
     selectionFailed,
     downloadFailed,
+    versionMismatch,
   }
 }

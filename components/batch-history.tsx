@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import type { BatchDto } from '@/lib/batch/types'
+import { isVersionMismatch } from '@/lib/version-intent'
 
 const BUSY = new Set(['queued', 'running', 'paused'])
 const RUNNING = new Set(['queued', 'running'])
@@ -119,9 +120,15 @@ export function BatchHistory() {
         !!item.downloadJobId &&
         (!item.downloadStatus || item.downloadStatus === 'failed')
     ).length
+    const versionMismatch = batch.items.filter(
+      (item) =>
+        item.status === 'queued' &&
+        !!item.title &&
+        isVersionMismatch(item.line, item.title, item.album)
+    ).length
     if (
       !window.confirm(
-        `重新跑完整流程？会重新搜索、AI 选版并下载：选版失败 ${selectionFailed} 首，下载失败 ${downloadFailed} 首。`
+        `重新跑完整流程？会重新搜索、AI 选版并下载：选版失败 ${selectionFailed} 首，下载失败 ${downloadFailed} 首，版本不符 ${versionMismatch} 首。`
       )
     ) {
       return
@@ -133,7 +140,7 @@ export function BatchHistory() {
       if (!res.ok || json.code !== 0) throw new Error(json.message || '操作失败')
       const data = json.data as { retried?: number; note?: string }
       if (!data.retried) {
-        toast.info(data.note || '没有可重试的失败项')
+        toast.info(data.note || '没有可重试的问题项')
       } else {
         toast.success(`已重新排队 ${data.retried} 首`, {
           description: '会重新搜索、选版并下载，旧失败记录保留在下载历史里。',
@@ -167,13 +174,25 @@ export function BatchHistory() {
             ? Math.min(100, (batch.processed / batch.total) * 100)
             : 0
           const isBusy = busy === batch.id
-          const retryable = batch.items.filter(
-            (item) =>
-              item.status === 'failed' ||
-              (item.status === 'queued' &&
-                !!item.downloadJobId &&
-                (!item.downloadStatus || item.downloadStatus === 'failed'))
-          ).length
+          const retryableIds = new Set<string>()
+          for (const item of batch.items) {
+            if (item.status === 'failed') retryableIds.add(item.id)
+            if (
+              item.status === 'queued' &&
+              !!item.downloadJobId &&
+              (!item.downloadStatus || item.downloadStatus === 'failed')
+            ) {
+              retryableIds.add(item.id)
+            }
+            if (
+              item.status === 'queued' &&
+              !!item.title &&
+              isVersionMismatch(item.line, item.title, item.album)
+            ) {
+              retryableIds.add(item.id)
+            }
+          }
+          const retryable = retryableIds.size
           const canRetry =
             retryable > 0 &&
             !downloading &&
@@ -251,14 +270,14 @@ export function BatchHistory() {
                       disabled={isBusy}
                       onClick={() => void retryFailed(batch)}
                       className="shrink-0 whitespace-nowrap"
-                      title="重新搜索、选版并下载选版失败和下载失败的条目"
+                      title="重新搜索、选版并下载：选版失败、下载失败和版本不符的条目"
                     >
                       {isBusy ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <RotateCcw className="h-3.5 w-3.5" />
                       )}
-                      重试失败项 {retryable}
+                      重试问题项 {retryable}
                     </Button>
                   ) : null}
                   <Button
