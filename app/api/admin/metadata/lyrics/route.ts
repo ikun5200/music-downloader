@@ -88,6 +88,8 @@ export async function POST() {
     const { files, truncated } = await walkAudioFiles(root)
     const settings = await getSettings()
     const aiConfig = await getAiConfig().catch(() => null)
+    // 给 AI 留出处理时间；接近路由超时后剩余文件直接走规则，避免整批失败。
+    const aiDeadline = Date.now() + 240_000
     let withLyrics = 0
     let changed = 0
     let unchanged = 0
@@ -104,7 +106,7 @@ export async function POST() {
         artist: info.artist,
         cleanCredits: settings.lyricsCleanCredits,
         simplify: settings.lyricsSimplify,
-        aiEnabled: settings.lyricsAiCleanEnabled,
+        aiEnabled: settings.lyricsAiCleanEnabled && Date.now() < aiDeadline,
         aiConfig,
       })
       if (!cleaned.text) {
@@ -175,7 +177,7 @@ export async function POST() {
         aiFallback,
         truncated,
         errors,
-        note: `清理完成：扫描 ${files.length} 首，带歌词 ${withLyrics} 首，改写 ${changed} 首；AI 识别 ${aiUsed} 首，规则兜底 ${aiFallback} 首。${
+        note: `清理完成：扫描 ${files.length} 首，带歌词 ${withLyrics} 首，改写 ${changed} 首；AI 识别 ${aiUsed} 首，其余 ${aiFallback} 首按规则处理。${
           truncated ? '文件过多，只处理了前 2000 首。' : ''
         }`,
       },

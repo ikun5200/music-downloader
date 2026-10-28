@@ -199,7 +199,7 @@ export function DownloadsClient() {
     if (cleaningLyrics) return
     if (
       !window.confirm(
-        '清理下载目录所有音频内嵌歌词：去掉开头的作词/作曲/制作人/公司信息，并按设置转简体。只改歌词标签，不重新编码音频。继续？'
+        '清理下载目录所有音频内嵌歌词：优先用 AI 识别第一句歌词和制作信息，演唱者前缀（韩红：、林俊杰：、合：）会保留；AI 不可用时按规则清理，并按设置转简体。只改歌词标签，不重新编码音频。继续？'
       )
     ) {
       return
@@ -215,12 +215,16 @@ export function DownloadsClient() {
         changed: number
         unchanged: number
         failed: number
+        aiUsed?: number
         note?: string
         errors?: string[]
       }
-      toast.success(`歌词清理完成：改写 ${data.changed} 首`, {
-        description: data.errors?.length ? data.errors.slice(0, 3).join('；') : data.note,
-      })
+      toast.success(
+        `歌词清理完成：改写 ${data.changed} 首${data.aiUsed ? `，AI 识别 ${data.aiUsed} 首` : ''}`,
+        {
+          description: data.errors?.length ? data.errors.slice(0, 3).join('；') : data.note,
+        }
+      )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
