@@ -189,6 +189,33 @@ describe('batch song selector', () => {
     expect(selection.aiUsed).toBe(true)
   })
 
+  it('sends every raw candidate to AI, including ones outside the rule top list', async () => {
+    const bad = Array.from({ length: 20 }, (_, index) =>
+      song('kw', `K歌之王 版本${index + 1}`, '陈奕迅', 222, `合集${index + 1}`)
+    )
+    const original = song('kw', 'K歌之王 (粤语)', '陈奕迅', 222, '打得火热')
+    let payload: any = null
+    const selection = await selectBestSong(
+      'K歌之王 陈奕迅',
+      results([['kw', [...bad, original]]]),
+      info,
+      {
+        aiConfig,
+        aiChat: async (_config, messages) => {
+          payload = JSON.parse(String(messages[messages.length - 1].content))
+          const index = payload.candidates.findIndex(
+            (candidate: any) => candidate.album === '打得火热'
+          )
+          return JSON.stringify({ index, reason: '选择《打得火热》原版' })
+        },
+      }
+    )
+    expect(payload.candidates).toHaveLength(21)
+    expect(payload.candidates.some((candidate: any) => candidate.album === '打得火热')).toBe(true)
+    expect(selection.song.album).toBe('打得火热')
+    expect(selection.aiUsed).toBe(true)
+  })
+
   it('prefers the configured platform order when scores are close', async () => {
     const orderedInfo = new Map(info)
     orderedInfo.set('kw', { ...info.get('kw')!, order: 1 })

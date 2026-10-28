@@ -3,7 +3,6 @@ import { pickMetadataWithAi } from './ai'
 import {
   cleanAlbumName,
   isCompilationAlbum,
-  isLooseMatch,
   isSyncedLyrics,
   scoreCandidate,
 } from './normalize'
@@ -252,10 +251,12 @@ export async function scrapeMetadata(
 
   let aiUsed = false
   if (!preferred) {
-    const loose = sortCandidates(all.filter(isLooseMatch)).slice(0, 8)
-    if (options.aiConfig?.enabled && options.aiConfig.apiKey && loose.length) {
+    // 规则没有可信候选时，把已检索到的完整候选列表交给 AI，
+    // 不再先按宽松匹配筛一遍或只发前 8 条。
+    const aiCandidates = sortCandidates(all)
+    if (options.aiConfig?.enabled && options.aiConfig.apiKey && aiCandidates.length) {
       try {
-        const pick = await pickMetadataWithAi(query, loose, order, options.aiConfig)
+        const pick = await pickMetadataWithAi(query, aiCandidates, order, options.aiConfig)
         if (pick.index === -1) {
           return {
             status: 'not_found',
@@ -263,7 +264,7 @@ export async function scrapeMetadata(
             aiUsed: true,
           }
         }
-        preferred = loose[pick.index]
+        preferred = aiCandidates[pick.index]
         aiUsed = true
         notes.push(`AI 选择：${pick.reason || '匹配原版'}`)
         const adapter = getMetadataAdapter(preferred.source)

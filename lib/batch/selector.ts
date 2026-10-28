@@ -3,6 +3,7 @@ import type { PlatformSearchResult, RawSearchSong } from '../search/types'
 import { normalizeText } from '../utils'
 import { chatCompletion, extractJsonObject, type ChatMessage } from '../ai/client'
 import { getAiConfig, type AiConfig } from '../settings'
+import { isCompilationAlbum } from '../metadata/normalize'
 
 export interface PlatformInfo {
   channels: number
@@ -36,6 +37,8 @@ interface CandidateBase {
   info: PlatformInfo
   /** 标题本身命中翻唱/伴奏/现场等版本标记。 */
   variant: boolean
+  /** 专辑名命中现场/精选/钢琴等标记；只作为 AI 参考，不直接丢弃候选。 */
+  albumVariant: boolean
 }
 
 interface PreparedCandidate extends CandidateBase {
@@ -49,7 +52,7 @@ interface ScoredCandidate extends CandidateBase {
 
 // 这些是“版本变体”标记；用户没明确要这个版本时，规则路径会排除。
 const VERSION_RE =
-  /(翻唱|cover|伴奏|纯音乐|钢琴|吉他|古筝|笛子|口琴|翻弹|演奏|铃声|片段|试听|组曲|串烧|联唱|medley|mv首播|首播|预告|采访|电台|节目|改编|对唱|remix|\bdj\b|\blive\b|现场|演唱会|音乐节|晚会|毕业歌会|春晚|0\.8x|加速版|慢速版|降调|升调|混音)/i
+  /(翻唱|cover|伴奏|纯音乐|钢琴|吉他|古筝|笛子|口琴|翻弹|演奏|铃声|片段|试听|组曲|串烧|联唱|medley|mv首播|首播|预告|采访|电台|节目|改编|对唱|remix|\bdj\b|\blive\b|现场|演唱会|音乐会|音乐节|晚会|毕业歌会|春晚|重制|重录|新版|\bversion\b|0\.8x|加速版|慢速版|降调|升调|混音)/i
 
 const GENERIC_ARTIST_RE =
   /(音乐调频|歌单|电台|音乐台|音乐信箱|宝藏|推荐|精选|合集|频道|fm|radio|翻唱集|播放器)/i
@@ -59,8 +62,9 @@ const QUERY_STOP_RE =
   /^(原版|原唱|无损|高音质|高清|flac|mp3|320k|128k|hires|hi-res|母带|24bit|官方)$/i
 
 const AI_SYSTEM_PROMPT = `你是音乐下载站的选版助手。用户想下载的是原版录音室歌曲，不是翻唱、cover、伴奏、纯音乐、钢琴/吉他等器乐版、DJ、remix、live/现场/演唱会、组曲/串烧、MV首播/解说、电台节目、合集或改编对唱版。
-候选列表可能是规则筛选后的结果，也可能是完整搜索结果（其中很多是变体）。请只选择真正的原版录音室版本；如果没有原版，返回 {"index": -1, "reason": "原因"}，不要为了下载而强行选择变体。
-优先：标题一致、歌手一致、录音室版本、时长正常。
+候选列表是各平台的完整搜索结果，没有经过规则筛选，里面可能有很多变体、合集和无关歌曲。请逐条判断，只选择真正的原版录音室版本；如果没有原版，返回 {"index": -1, "reason": "原因"}，不要为了下载而强行选择变体。
+注意：variant 字段只根据标题判断；专辑名里的“演唱会/Live/精选/合集/钢琴/伴奏/AIR/新版本”等也可能是变体，要结合 album 和 albumVariant 判断。
+优先：标题一致、歌手一致、原始录音室专辑、时长正常；如果多个平台都是原版，优先平台顺序靠前的平台。
 只输出 JSON，不要输出解释或 markdown：{"index": 0, "reason": "一句话原因"}。`
 
 function aiRejectionMessage(reason: string): string {
@@ -207,18 +211,19 @@ async function chooseWithAi(
   if (!aiConfig.apiKey) {
     return { kind: 'unavailable', error: '未配置 AI API Key' }
   }
-  const unique = dedupe(candidates)
-  if (!unique.length) {
+  if (!candidates.length) {
     return { kind: 'unavailable', error: '没有可发给 AI 的候选' }
   }
 
+  const platformOrder = [...new Set(candidates.map((candidate) => candidate.platform))]
   const messages: ChatMessage[] = [
     { role: 'system', content: AI_SYSTEM_PROMPT },
     {
       role: 'user',
       content: JSON.stringify({
         query,
-        candidates: unique.map((candidate, index) => ({
+        platformOrder,
+        candidates: candidates.map((candidate, index) => ({
           index,
           platform: candidate.platform,
           title: candidate.song.title,
@@ -226,7 +231,7 @@ async function chooseWithAi(
           album: candidate.song.album || null,
           duration: candidate.duration || null,
           variant: candidate.variant,
-          score: candidate.score != null ? Math.round(candidate.score) : null,
+          albumVariant: candidate.albumVariant,
         })),
       }),
     },
@@ -241,8 +246,8 @@ async function chooseWithAi(
     if (Number.isInteger(index) && index === -1) {
       return { kind: 'rejected', reason: reason || 'AI 判断没有原版' }
     }
-    if (Number.isInteger(index) && index >= 0 && index < unique.length) {
-      const chosen = unique[index]
+    if (Number.isInteger(index) && index >= 0 && index < candidates.length) {
+      const chosen = candidates[index]
       return {
         kind: 'picked',
         candidate: chosen,
@@ -261,8 +266,8 @@ async function chooseWithAi(
 }
 
 /**
- * 规则优先；规则匹配不到原版时，把完整搜索结果交给 AI 判断。
- * AI 明确返回 -1 或未配置 AI 时，宁可不下载，也不强行匹配。
+ * AI 优先：把各平台的完整搜索结果交给 AI 判断原版；AI 不可用或返回异常时，
+ * 才回退到规则排序。AI 明确返回 -1 时宁可不下载，也不强行匹配变体。
  */
 export async function selectBestSong(
   query: string,
@@ -285,7 +290,7 @@ export async function selectBestSong(
     for (const song of result.results) {
       if (!song.id || !song.title || !song.artist) continue
       const duration = Number(song.duration) || 0
-      if (duration > 0 && (duration < 45 || duration > 900)) continue
+      const album = String(song.album || '')
       all.push({
         platform: result.platform,
         song,
@@ -294,6 +299,7 @@ export async function selectBestSong(
         duration,
         info,
         variant: VERSION_RE.test(String(song.title)),
+        albumVariant: VERSION_RE.test(album) || isCompilationAlbum(album),
       })
     }
   }
@@ -303,12 +309,29 @@ export async function selectBestSong(
     throw new Error('没有找到任何可用候选（渠道或音质不满足）')
   }
 
-  const ruleCandidates = candidates.filter(
-    (candidate) => !candidate.variant || queryHasVersion
-  )
   const aiConfig = options.aiConfig === undefined ? await getAiConfig() : options.aiConfig
   const chat = options.aiChat || chatCompletion
 
+  // AI 优先：把各平台的完整搜索结果全部交给 AI，不再先做变体过滤或只发前 12 条。
+  // 这样像《K歌之王》这种原版排在规则结果后面的情况，AI 也能看到。
+  const ai = await chooseWithAi(rawQuery, all, aiConfig, chat)
+  if (ai.kind === 'picked') {
+    return {
+      platform: ai.candidate.platform,
+      song: ai.candidate.song,
+      reason: `AI：${ai.reason}`.slice(0, 300),
+      aiUsed: true,
+      score: ai.score,
+    }
+  }
+  if (ai.kind === 'rejected') {
+    throw new Error(aiRejectionMessage(ai.reason))
+  }
+
+  // AI 不可用或返回异常时才回退规则；规则仍然只用于兜底。
+  const ruleCandidates = candidates.filter(
+    (candidate) => !candidate.variant || queryHasVersion
+  )
   if (ruleCandidates.length) {
     const { artistTerms, titleTerms, ranked } = scoreCandidates(ruleCandidates, terms)
     const top = ranked[0]
@@ -331,19 +354,6 @@ export async function selectBestSong(
       !!top && unmatchedTerms.length === 0 && titleOk && artistOk && !genericTop
 
     if (ruleOk) {
-      const ai = await chooseWithAi(rawQuery, ranked.slice(0, 12), aiConfig, chat)
-      if (ai.kind === 'picked') {
-        return {
-          platform: ai.candidate.platform,
-          song: ai.candidate.song,
-          reason: `AI：${ai.reason}`.slice(0, 300),
-          aiUsed: true,
-          score: ai.score,
-        }
-      }
-      if (ai.kind === 'rejected') {
-        throw new Error(aiRejectionMessage(ai.reason))
-      }
       return {
         platform: top.platform,
         song: top.song,
@@ -353,20 +363,6 @@ export async function selectBestSong(
       }
     }
 
-    // 规则匹配失败：不再强行使用 top，改为把完整候选交给 AI。
-    const ai = await chooseWithAi(rawQuery, candidates, aiConfig, chat)
-    if (ai.kind === 'picked') {
-      return {
-        platform: ai.candidate.platform,
-        song: ai.candidate.song,
-        reason: `AI：${ai.reason}`.slice(0, 300),
-        aiUsed: true,
-        score: ai.score,
-      }
-    }
-    if (ai.kind === 'rejected') {
-      throw new Error(aiRejectionMessage(ai.reason))
-    }
     const detail = unmatchedTerms.length
       ? `（无法确认「${unmatchedTerms.join('、')}」）`
       : top
@@ -375,19 +371,5 @@ export async function selectBestSong(
     throw new Error(`规则未匹配到原版${detail}，${ai.error}，未下载`)
   }
 
-  // 规则把所有候选都判成变体：把完整列表交给 AI 再判断一次。
-  const ai = await chooseWithAi(rawQuery, candidates, aiConfig, chat)
-  if (ai.kind === 'picked') {
-    return {
-      platform: ai.candidate.platform,
-      song: ai.candidate.song,
-      reason: `AI：${ai.reason}`.slice(0, 300),
-      aiUsed: true,
-      score: ai.score,
-    }
-  }
-  if (ai.kind === 'rejected') {
-    throw new Error(aiRejectionMessage(ai.reason))
-  }
   throw new Error(`规则没有可用候选（全部疑似翻唱/变体），${ai.error}，未下载`)
 }
