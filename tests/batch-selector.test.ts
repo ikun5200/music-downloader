@@ -377,6 +377,28 @@ describe('batch song selector', () => {
     expect(selection.song.album).toBe('做人爱自己')
   })
 
+  it('falls back when AI index and title disagree', async () => {
+    const studio = song('kw', 'K歌之王', '陈奕迅', 222, '打得火热')
+    const live = song('kw', 'K歌之王 (Live)', '陈奕迅', 233, '2003演唱会')
+    const selection = await selectBestSong(
+      'K歌之王 陈奕迅',
+      results([['kw', [studio, live]]]),
+      info,
+      {
+        aiConfig,
+        aiChat: async () =>
+          JSON.stringify({
+            index: 0,
+            title: 'K歌之王 (Live)',
+            album: '2003演唱会',
+            reason: 'index 和标题不一致',
+          }),
+      }
+    )
+    expect(selection.song.title).toBe('K歌之王')
+    expect(selection.aiUsed).toBe(false)
+  })
+
   it('prefers the configured platform order when scores are close', async () => {
     const orderedInfo = new Map(info)
     orderedInfo.set('kw', { ...info.get('kw')!, order: 1 })

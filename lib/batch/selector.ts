@@ -78,7 +78,8 @@ const AI_SYSTEM_PROMPT = `你是音乐下载站的选版助手。先看 query �
 候选列表是各平台的完整搜索结果，没有经过规则筛选，里面可能有很多变体、合集和无关歌曲。请逐条判断；如果找不到用户要求的版本，返回 {"index": -1, "reason": "原因"}，不要为了下载而强行选择别的版本。
 注意：variant/albumVariant 只是提示，不是硬性排除；当 requestedVersion/requestedLanguage 命中时，对应的变体就是正确目标。
 优先：标题一致、歌手一致、版本/语言匹配、时长正常；如果多个平台都符合，优先平台顺序靠前的平台。
-只输出 JSON，不要输出解释或 markdown：{"index": 0, "reason": "一句话原因"}。`
+只输出 JSON，不要输出解释或 markdown：{"index": 0, "title": "候选里的标题", "album": "候选里的专辑", "reason": "一句话原因"}。
+title 和 album 必须从候选里原样复制，用来校验 index 没有错位。`
 
 function aiRejectionMessage(reason: string): string {
   const detail = reason ? `（${reason.slice(0, 160)}）` : ''
@@ -266,12 +267,24 @@ async function chooseWithAi(
     const parsed = extractJsonObject(content)
     const index = Number(parsed?.index)
     const reason = String(parsed?.reason || '').slice(0, 240)
+    const pickedTitle = String(parsed?.title || '').trim()
+    const pickedAlbum = String(parsed?.album || '').trim()
 
     if (Number.isInteger(index) && index === -1) {
       return { kind: 'rejected', reason: reason || 'AI 判断没有原版' }
     }
     if (Number.isInteger(index) && index >= 0 && index < candidates.length) {
       const chosen = candidates[index]
+      // AI 偶尔会返回和理由不一致的 index；用标题/专辑交叉校验。
+      if (pickedTitle && normalizeText(pickedTitle) !== normalizeText(chosen.song.title)) {
+        return { kind: 'unavailable', error: 'AI 返回的标题与 index 不一致，已回退规则' }
+      }
+      if (
+        pickedAlbum &&
+        normalizeText(pickedAlbum) !== normalizeText(chosen.song.album || '')
+      ) {
+        return { kind: 'unavailable', error: 'AI 返回的专辑与 index 不一致，已回退规则' }
+      }
       // AI 偶尔会返回和理由不一致的 index；这里做一次硬校验，
       // 不合格就回退规则，避免下载 54 秒片段、变体或错误语言版本。
       if (chosen.duration > 0 && chosen.duration < 60) {
