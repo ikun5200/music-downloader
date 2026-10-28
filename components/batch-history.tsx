@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Clock3, Layers, Loader2, Pause, Play, Trash2, X } from 'lucide-react'
+import { Clock3, Layers, Loader2, Pause, Play, RotateCcw, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { BatchItemRow } from '@/components/batch-item-row'
 import { Badge } from '@/components/ui/badge'
@@ -110,6 +110,40 @@ export function BatchHistory() {
     }
   }
 
+  async function retryFailed(batch: BatchDto) {
+    if (busy) return
+    const selectionFailed = batch.items.filter((item) => item.status === 'failed').length
+    const downloadFailed = batch.items.filter(
+      (item) => item.status === 'queued' && item.downloadStatus === 'failed'
+    ).length
+    if (
+      !window.confirm(
+        `重新跑完整流程？会重新搜索、AI 选版并下载：选版失败 ${selectionFailed} 首，下载失败 ${downloadFailed} 首。`
+      )
+    ) {
+      return
+    }
+    setBusy(batch.id)
+    try {
+      const res = await fetch(`/api/batches/${batch.id}/retry`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok || json.code !== 0) throw new Error(json.message || '操作失败')
+      const data = json.data as { retried?: number; note?: string }
+      if (!data.retried) {
+        toast.info(data.note || '没有可重试的失败项')
+      } else {
+        toast.success(`已重新排队 ${data.retried} 首`, {
+          description: '会重新搜索、选版并下载，旧失败记录保留在下载历史里。',
+        })
+      }
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   if (!batches.length) return null
 
   return (
@@ -130,6 +164,15 @@ export function BatchHistory() {
             ? Math.min(100, (batch.processed / batch.total) * 100)
             : 0
           const isBusy = busy === batch.id
+          const retryable = batch.items.filter(
+            (item) =>
+              item.status === 'failed' ||
+              (item.status === 'queued' && item.downloadStatus === 'failed')
+          ).length
+          const canRetry =
+            retryable > 0 &&
+            !downloading &&
+            ['completed', 'failed'].includes(batch.status)
           return (
             <div
               key={batch.id}
@@ -194,6 +237,23 @@ export function BatchHistory() {
                         <Play className="h-3.5 w-3.5" />
                       )}
                       继续
+                    </Button>
+                  ) : null}
+                  {canRetry ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={isBusy}
+                      onClick={() => void retryFailed(batch)}
+                      className="shrink-0 whitespace-nowrap"
+                      title="重新搜索、选版并下载选版失败和下载失败的条目"
+                    >
+                      {isBusy ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      )}
+                      重试失败项 {retryable}
                     </Button>
                   ) : null}
                   <Button
