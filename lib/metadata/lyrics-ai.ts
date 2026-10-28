@@ -1,6 +1,7 @@
 import { chatCompletion, extractJsonObject } from '../ai/client'
 import type { AiConfig } from '../settings'
 import { cleanLyrics, type CleanLyricsOptions } from './lyrics'
+import { titleKey } from './normalize'
 
 export interface AiLyricCleanOptions extends CleanLyricsOptions {
   aiConfig?: AiConfig | null
@@ -14,24 +15,33 @@ export interface AiLyricCleanResult {
 }
 
 const TIMESTAMP_LINE_RE = /^\s*\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]\s*\S/
+const TIMESTAMP_PREFIX_RE = /^\s*(?:\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\])+\s*/
 const TAG_ONLY_RE = /^\s*\[(?:ti|ar|al|by|offset|re|ve|length|kuwo|kugou|qq|music):[^\]]*\]\s*$/i
 
 function timestampLineCount(text: string): number {
   return text.split('\n').filter((line) => TIMESTAMP_LINE_RE.test(line)).length
 }
 
+function stripTimestamp(line: string): string {
+  return line.replace(TIMESTAMP_PREFIX_RE, '').trim()
+}
+
 /**
  * 只在开头看起来像“制作信息/标题行”时才调用 AI，避免每首歌都消耗一次请求。
  * 演唱者前缀（韩红：、林俊杰：、合：等）也算候选，AI 会判断它属于歌词并保留。
+ * 第一行恰好等于歌名时也交给 AI：它可能是标题行，也可能是重复歌名的第一句歌词。
  */
-function hasLikelyHeader(raw: string): boolean {
+function hasLikelyHeader(raw: string, title?: string): boolean {
   const lines = raw.replace(/\r\n?/g, '\n').split('\n')
   const first = lines.find((line) => {
     const value = line.trim()
     return !!value && !TAG_ONLY_RE.test(value)
   })
   if (!first) return false
-  return /[：:]/.test(first) || /\s[-–—]\s/.test(first)
+  const value = stripTimestamp(first)
+  if (!value) return false
+  if (/[：:]/.test(value) || /\s[-–—]\s/.test(value)) return true
+  return !!title && titleKey(value) === titleKey(title)
 }
 
 /**
@@ -51,7 +61,12 @@ export async function cleanLyricsWithAi(
   if (options.cleanCredits === false) return { text: fallback, aiUsed: false }
 
   const config = options.aiConfig
-  if (!options.aiEnabled || !config?.enabled || !config.apiKey || !hasLikelyHeader(raw)) {
+  if (
+    !options.aiEnabled ||
+    !config?.enabled ||
+    !config.apiKey ||
+    !hasLikelyHeader(raw, options.title)
+  ) {
     return { text: fallback, aiUsed: false }
   }
 
@@ -84,11 +99,18 @@ export async function cleanLyricsWithAi(
     const index = Number(parsed?.firstLyricLine)
     if (
       !Number.isInteger(index) ||
-      index <= 0 ||
+      index < 0 ||
       index >= lines.length ||
       !TIMESTAMP_LINE_RE.test(lines[index] || '')
     ) {
       return { text: fallback, aiUsed: false, note: 'AI 返回的歌词起始行无效，已回退规则' }
+    }
+
+    // AI 说第一行就是歌词时允许 index=0，但“歌名 - 歌手”这种标题行不能留。
+    const chosen = stripTimestamp(lines[index] || '')
+    const title = titleKey(options.title || '')
+    if (index === 0 && title && /\s[-–—]\s/.test(chosen) && titleKey(chosen).includes(title)) {
+      return { text: fallback, aiUsed: false, note: 'AI 把标题行当成歌词，已回退规则' }
     }
 
     const cleaned = cleanLyrics(raw, { ...options, startLineIndex: index })

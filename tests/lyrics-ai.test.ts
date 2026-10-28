@@ -56,6 +56,42 @@ describe('cleanLyricsWithAi', () => {
     expect(result.note).toContain('AI')
   })
 
+  it('AI 判定第一行就是歌词时保留重复歌名', async () => {
+    const raw = [
+      '[00:02.44]我很想爱他',
+      '[00:11.48]',
+      '[00:32.48]天空 下起雨了',
+    ].join('\n')
+    vi.mocked(chatCompletion).mockResolvedValue('{"firstLyricLine":0}')
+    const result = await cleanLyricsWithAi(raw, {
+      title: '我很想爱他',
+      artist: '林俊杰',
+      aiEnabled: true,
+      aiConfig: config,
+    })
+    expect(result.aiUsed).toBe(true)
+    expect(result.text).toContain('[00:02.44]我很想爱他')
+    expect(result.text).toContain('[00:32.48]天空 下起雨了')
+  })
+
+  it('AI 把“歌名 - 歌手”标题行当成歌词时回退规则', async () => {
+    const raw = [
+      '[00:00.00]珊瑚海 - 周杰伦/Lara梁心颐',
+      '[00:13.12]男：',
+      '[00:15.16]海平面远方开始阴霾',
+    ].join('\n')
+    vi.mocked(chatCompletion).mockResolvedValue('{"firstLyricLine":0}')
+    const result = await cleanLyricsWithAi(raw, {
+      title: '珊瑚海',
+      artist: '周杰伦/Lara梁心颐',
+      aiEnabled: true,
+      aiConfig: config,
+    })
+    expect(result.aiUsed).toBe(false)
+    expect(result.text).not.toContain('珊瑚海 - 周杰伦')
+    expect(result.text).toContain('[00:13.12]男：')
+  })
+
   it('AI 返回非法行号时回退规则清理', async () => {
     vi.mocked(chatCompletion).mockResolvedValue('{"firstLyricLine":99}')
     const result = await cleanLyricsWithAi(rawWithCredits, {

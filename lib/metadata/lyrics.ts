@@ -211,6 +211,27 @@ function isTitleLine(text: string, title?: string, artist?: string): boolean {
   return false
 }
 
+function hasArtistSeparator(text: string): boolean {
+  return /\s[-–—]\s/.test(text.trim())
+}
+
+/** 标题行后面如果紧跟制作信息，基本可以确定它是头部而不是重复的歌词。 */
+function nextMeaningfulIsHeader(
+  parsed: ParsedLine[],
+  from: number,
+  title?: string,
+  artist?: string
+): boolean {
+  for (let index = from; index < parsed.length; index++) {
+    const line = parsed[index]
+    if (line.kind === 'tag') continue
+    const value = line.text.trim()
+    if (!value) continue
+    return isHeaderNoise(value, title, artist)
+  }
+  return false
+}
+
 function isHeaderNoise(text: string, title?: string, artist?: string): boolean {
   const value = text.trim()
   if (!value) return true
@@ -273,20 +294,26 @@ export function cleanLyrics(
         start++
         continue
       }
-      if (line.kind === 'text') {
-        if (isHeaderNoise(line.text, options.title, options.artist)) {
+      const text = line.text.trim()
+      if (!text) {
+        start++
+        continue
+      }
+      if (isCreditText(text)) {
+        start++
+        continue
+      }
+      if (isTitleLine(text, options.title, options.artist)) {
+        // 只有“歌名 - 歌手”或后面紧跟制作信息的标题行才删；
+        // 像《我很想爱他》这种第一句歌词恰好等于歌名的情况必须保留。
+        if (
+          line.kind === 'text' ||
+          hasArtistSeparator(text) ||
+          nextMeaningfulIsHeader(parsed, start + 1, options.title, options.artist)
+        ) {
           start++
           continue
         }
-        break
-      }
-      if (!line.text) {
-        start++
-        continue
-      }
-      if (isHeaderNoise(line.text, options.title, options.artist)) {
-        start++
-        continue
       }
       break
     }
