@@ -9,6 +9,7 @@ import {
 import { scrapeMetadata } from './scrape'
 import { cleanLyricsWithAi } from './lyrics-ai'
 import { writeMetadataTags } from './tag'
+import { resolveArtists } from '../artists'
 
 export interface MetadataProcessResult {
   status: 'success' | 'partial' | 'failed' | 'not_found' | 'disabled'
@@ -81,6 +82,37 @@ export async function processMetadataForJob(
       if (!candidate.album && job.album) candidate.album = job.album
       if (!candidate.albumArtist && job.album) candidate.albumArtist = job.artist
     }
+
+    // 飞牛按固定分隔符拆 artist，且先拆再解码 HTML 实体。写标签前先统一：
+    // 解码 &apos; 等实体，并由 AI/规则判断 &、/、逗号是合作分隔还是乐队名的一部分。
+    const artistResolution = await resolveArtists(candidate.artist, {
+      title: candidate.title,
+      album: candidate.album,
+      aiConfig,
+      aiEnabled: settings.metadataArtistAiEnabled,
+    })
+    const albumArtistRaw = candidate.albumArtist || candidate.artist
+    const albumArtistResolution =
+      albumArtistRaw === candidate.artist
+        ? artistResolution
+        : await resolveArtists(albumArtistRaw, {
+            title: candidate.title,
+            album: candidate.album,
+            aiConfig,
+            aiEnabled: settings.metadataArtistAiEnabled,
+          })
+    candidate.artists = artistResolution.artists
+    candidate.artist = artistResolution.artistTag || candidate.artist
+    candidate.albumArtist = albumArtistResolution.albumArtist || candidate.albumArtist
+    const artistNotes = [artistResolution.note]
+    if (
+      albumArtistResolution !== artistResolution &&
+      albumArtistResolution.note &&
+      !artistNotes.includes(albumArtistResolution.note)
+    ) {
+      artistNotes.push(albumArtistResolution.note)
+    }
+
     const lyricsResult = candidate.lyrics
       ? await cleanLyricsWithAi(candidate.lyrics, {
           title: candidate.title,
@@ -105,7 +137,7 @@ export async function processMetadataForJob(
 
     return {
       status: written.ok ? 'success' : written.partial ? 'partial' : 'failed',
-      note: [result.note, lyricsResult?.note, written.note]
+      note: [...artistNotes, result.note, lyricsResult?.note, written.note]
         .filter(Boolean)
         .join('；')
         .slice(0, 1000),

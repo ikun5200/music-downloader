@@ -86,6 +86,9 @@ export function SettingsForm({
   const [lyricsSimplify, setLyricsSimplify] = useState(initial.lyricsSimplify)
   const [lyricsAiCleanEnabled, setLyricsAiCleanEnabled] = useState(initial.lyricsAiCleanEnabled)
   const [metadataAiEnabled, setMetadataAiEnabled] = useState(initial.metadataAiEnabled)
+  const [metadataArtistAiEnabled, setMetadataArtistAiEnabled] = useState(
+    initial.metadataArtistAiEnabled
+  )
   const [rescraping, setRescraping] = useState(false)
   const [testingAi, setTestingAi] = useState(false)
   const [clearingAi, setClearingAi] = useState(false)
@@ -166,6 +169,7 @@ export function SettingsForm({
           lyricsSimplify,
           lyricsAiCleanEnabled,
           metadataAiEnabled,
+          metadataArtistAiEnabled,
         }),
       })
       const json = await res.json()
@@ -653,6 +657,21 @@ export function SettingsForm({
                 onChange={setMetadataAiEnabled}
                 disabled={!aiReady}
                 label="AI 识别/纠错"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-[11px] text-white/55">AI 识别歌手/乐队名</div>
+                <div className="mt-0.5 text-[10px] leading-4 text-white/25">
+                  判断 &amp;、/、逗号是合作分隔还是乐队名的一部分；避免把
+                  Simon &amp; Garfunkel 拆开，也避免把两位歌手并成一位。失败自动回退规则。
+                </div>
+              </div>
+              <Switch
+                checked={metadataArtistAiEnabled}
+                onChange={setMetadataArtistAiEnabled}
+                disabled={!aiReady}
+                label="AI 识别歌手/乐队名"
               />
             </div>
             {!aiReady ? (

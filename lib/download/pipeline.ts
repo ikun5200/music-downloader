@@ -3,7 +3,7 @@ import path from 'path'
 import type { DownloadJob } from '@prisma/client'
 import { PLATFORM_NAMES, QUALITY_RANK, type Platform } from '../constants'
 import { prisma, withDbRetry } from '../db'
-import { getSettings } from '../settings'
+import { getSettings, getAiConfig } from '../settings'
 import { getRankedChannels, type RankedChannel } from '../sources/selection'
 import { sourceManager } from '../sources/manager'
 import { recordStat } from '../sources/stats'
@@ -16,6 +16,7 @@ import { capQuality } from './quality-cap'
 import { validateFile } from './validator'
 import { processMetadataForJob, type MetadataProcessResult } from '../metadata/process'
 import { writeBasicTags } from '../metadata/tag'
+import { resolveArtists } from '../artists'
 
 const cancelControllers = new Map<string, AbortController>()
 const lastProgressAt = new Map<string, number>()
@@ -252,9 +253,16 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
         metadataResult.status !== 'success' &&
         metadataResult.status !== 'partial'
       ) {
+        const aiConfig = await getAiConfig().catch(() => null)
+        const artist = await resolveArtists(job.artist, {
+          title: job.title,
+          album: job.album,
+          aiConfig,
+          aiEnabled: settings.metadataArtistAiEnabled,
+        }).catch(() => null)
         await writeBasicTags(stagedFile, {
           title: job.title,
-          artist: job.artist,
+          artist: artist?.artistTag || job.artist,
           album: job.album,
         }).catch(() => null)
       }

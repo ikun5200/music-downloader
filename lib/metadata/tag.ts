@@ -6,6 +6,7 @@ import { fetchImage } from './http'
 import { isPlaceholderCover } from './cover'
 import { cleanLyrics } from './lyrics'
 import type { MetadataCandidate, MetadataWriteResult } from './types'
+import { normalizeArtists } from '../artists'
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
 const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe'
@@ -341,11 +342,13 @@ export async function writeBasicTags(
   filePath: string,
   tags: { title?: string | null; artist?: string | null; album?: string | null }
 ): Promise<MetadataWriteResult> {
+  const artist = normalizeArtists(String(tags.artist || '').trim())
   const candidate: MetadataCandidate = {
     source: 'itunes',
     sourceLabel: '下载信息',
     title: String(tags.title || '').trim(),
-    artist: String(tags.artist || '').trim(),
+    artist: artist.artistTag,
+    albumArtist: artist.albumArtist,
     album: String(tags.album || '').trim(),
     date: '',
     genre: '',

@@ -29,6 +29,8 @@ export interface AppSettings {
   lyricsSimplify: boolean
   lyricsAiCleanEnabled: boolean
   metadataAiEnabled: boolean
+  /** 是否用 AI 判断 artist 里的 & / , / feat. 是合作分隔还是乐队名的一部分。 */
+  metadataArtistAiEnabled: boolean
 }
 
 export interface AiConfig {
@@ -75,6 +77,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lyricsSimplify: true,
   lyricsAiCleanEnabled: true,
   metadataAiEnabled: true,
+  metadataArtistAiEnabled: true,
 }
 
 export const METADATA_SOURCES: MetadataSourceId[] = [
@@ -185,6 +188,7 @@ function parseSettings(rows: { key: string; value: string }[]): AppSettings {
     lyricsSimplify: (pick('lyricsSimplify') ?? 'true') !== 'false',
     lyricsAiCleanEnabled: (pick('lyricsAiCleanEnabled') ?? 'true') !== 'false',
     metadataAiEnabled: (pick('metadataAiEnabled') ?? 'true') !== 'false',
+    metadataArtistAiEnabled: (pick('metadataArtistAiEnabled') ?? 'true') !== 'false',
   }
 }
 
@@ -282,6 +286,9 @@ export async function setSettings(values: SettingsPatch) {
   }
   if (values.metadataAiEnabled != null) {
     entries.push(['metadataAiEnabled', String(values.metadataAiEnabled)])
+  }
+  if (values.metadataArtistAiEnabled != null) {
+    entries.push(['metadataArtistAiEnabled', String(values.metadataArtistAiEnabled)])
   }
   if (values.aiApiKey !== undefined && !/^[•*]+$/.test(values.aiApiKey)) {
     entries.push(['aiApiKey', values.aiApiKey ? encryptSecret(values.aiApiKey) : ''])
