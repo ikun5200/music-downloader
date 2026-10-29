@@ -10,13 +10,13 @@ import {
 const t2s = OpenCC.Converter({ from: 'tw', to: 'cn' })
 
 const VARIANT_RE =
-  /(live|现场|演唱会|remix|混音|伴奏|纯音乐|instrumental|acoustic|karaoke|卡拉\s*ok|翻唱|cover|dj|慢摇|加快|加速|变调|降调|升调|串烧|铃声|mv版|片段|剪辑|独白版|女声版|男声版|童声|钢琴版|吉他版|弹唱版|纯享版|深情版|治愈版|温柔版|烟嗓版|环绕版|3d环绕|广场舞|车载|demo|试听|抢听|预告|改编|慢速|0\.8x|1\.2x)/gi
+  /(live|现场|演唱会|remix|混音|伴奏|纯音乐|instrumental|acoustic|karaoke|卡拉\s*ok|翻唱|cover|dj|慢摇|加快|加速|变调|降调|升调|串烧|铃声|mv版|片段|剪辑|独白版|女声版|男声版|童声|钢琴版|吉他版|弹唱版|纯享版|深情版|治愈版|温柔版|烟嗓版|环绕版|3d环绕|广场舞|车载|demo|试听|抢听|预告|改编|慢速|体验版|黑胶版|黑胶|0\.8x|1\.2x)/gi
 
 const BRACKET_RE = /[（(【\[][^）)】\]]*[）)】\]]/g
 const PROMO_SUFFIX_RE =
   /\s*[-—–]\s*[^-—–]*(?:主题曲|片头曲|片尾曲|插曲|推广曲|宣传曲|印象曲|概念曲|人物曲|角色曲|献礼曲|周年|活动|游戏|电影|电视剧|动画|网剧|纪录片|综艺|官方|mv|版)[^-—–]*$/i
 const VERSION_SUFFIX_RE =
-  /\s*[-—–]\s*(?:铃声|伴奏|remix|mix|live|现场|演唱会|纯音乐|翻唱|cover|instrumental|acoustic|dj|慢摇|加快|加速|变调|降调|升调|串烧|伴奏版|纯音乐版|独白版|mv版|片段|剪辑|女声版|男声版|童声|钢琴版|吉他版|弹唱版|纯享版|深情版|治愈版|温柔版|烟嗓版|环绕版|广场舞|车载|demo|试听|抢听|预告|改编)[版曲]?\s*$/i
+  /\s*[-—–]\s*(?:铃声|伴奏|remix|mix|live|现场|演唱会|纯音乐|翻唱|cover|instrumental|acoustic|dj|慢摇|加快|加速|变调|降调|升调|串烧|伴奏版|纯音乐版|独白版|mv版|片段|剪辑|女声版|男声版|童声|钢琴版|吉他版|弹唱版|纯享版|深情版|治愈版|温柔版|烟嗓版|环绕版|广场舞|车载|demo|试听|抢听|预告|改编|体验版|黑胶版)[版曲]?\s*$/i
 
 // 精选/合集类专辑的曲目号和封面经常被重新编排，不能拿来当原版专辑信息。
 // “概念自选辑”这类正式发行专辑不算合集。
@@ -263,6 +263,9 @@ export function scoreCandidate(
 
   const albumMismatch = query.album && candidate.album && albumScore < 0.5 ? 12 : 0
   const compilationPenalty = albumIsCompilation ? 30 : 0
+  // 酷狗等来源经常返回“只有歌名/歌手、没有专辑”的结果；这种候选不应该
+  // 仅凭标题和时长就压过 iTunes/网易云的完整候选。
+  const albumMissingPenalty = String(candidate.album || '').trim() ? 0 : 15
   const versionBonus = versionRequested ? (versionMatch ? 12 : -40) : 0
   const base =
     titleScore * 50 +
@@ -271,6 +274,7 @@ export function scoreCandidate(
     albumScore * 5 +
     sourceBonus(candidate.source, order) +
     versionBonus -
+    albumMissingPenalty -
     albumMismatch -
     compilationPenalty
   // 用户明确要 Live/伴奏等版本时，版本标记本身不应再被当成扣分项。

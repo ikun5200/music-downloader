@@ -3,6 +3,7 @@ import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { fetchImage } from './http'
+import { isPlaceholderCover } from './cover'
 import { cleanLyrics } from './lyrics'
 import type { MetadataCandidate, MetadataWriteResult } from './types'
 
@@ -121,29 +122,41 @@ function buildMetadataArgs(
   return args
 }
 
+function refererForUrl(url: string): string | undefined {
+  if (url.includes('gtimg.cn') || url.includes('y.qq.com')) return 'https://y.qq.com/'
+  if (url.includes('126.net') || url.includes('music.163.com')) return 'https://music.163.com/'
+  if (url.includes('kugou.com')) return 'https://www.kugou.com/'
+  if (url.includes('kuwo.cn')) return 'https://www.kuwo.cn/'
+  if (url.includes('migu.cn')) return 'https://music.migu.cn/'
+  return undefined
+}
+
 async function prepareCover(
   candidate: MetadataCandidate,
-  tempDir: string
+  tempDir: string,
+  fallbackUrls: string[] = []
 ): Promise<string | null> {
-  const urls = candidate.coverUrls?.length
-    ? candidate.coverUrls
-    : candidate.coverUrl
-      ? [candidate.coverUrl]
-      : []
-  const referer =
-    candidate.source === 'qqmusic'
-      ? 'https://y.qq.com/'
-      : candidate.source === 'netease'
-        ? 'https://music.163.com/'
-        : candidate.source === 'kugou'
-          ? 'https://www.kugou.com/'
-          : candidate.source === 'kuwo'
-            ? 'https://www.kuwo.cn/'
-            : undefined
-  const headers = referer ? { Referer: referer } : undefined
+  const urls = [
+    ...new Set(
+      [
+        ...(candidate.coverUrls?.length
+          ? candidate.coverUrls
+          : candidate.coverUrl
+            ? [candidate.coverUrl]
+            : []),
+        ...fallbackUrls,
+      ].filter((url): url is string => !!url)
+    ),
+  ]
   for (const url of urls) {
-    const image = await fetchImage(url, { headers, timeoutMs: 20_000 })
+    const referer = refererForUrl(url)
+    const image = await fetchImage(url, {
+      headers: referer ? { Referer: referer } : undefined,
+      timeoutMs: 20_000,
+    })
     if (!image) continue
+    // 酷狗对无封面文件返回的固定黑胶占位图，不能写进文件。
+    if (isPlaceholderCover(image.buffer)) continue
     const isPng = image.buffer.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
     const file = path.join(tempDir, isPng ? 'cover.png' : 'cover.jpg')
     await fs.writeFile(file, image.buffer)
@@ -207,6 +220,8 @@ export async function writeMetadataTags(
     writeLyrics: boolean
     lyricsCleanCredits?: boolean
     lyricsSimplify?: boolean
+    /** 元数据源封面缺失/占位图时，回退使用下载任务本身的封面。 */
+    fallbackCoverUrls?: string[]
   }
 ): Promise<MetadataWriteResult> {
   const ext = path.extname(filePath).slice(1).toLowerCase()
@@ -226,7 +241,7 @@ export async function writeMetadataTags(
 
   try {
     if (options.writeCover && supportsCover) {
-      coverPath = await prepareCover(candidate, tempDir)
+      coverPath = await prepareCover(candidate, tempDir, options.fallbackCoverUrls)
     }
 
     const metadataArgs = buildMetadataArgs(candidate, {

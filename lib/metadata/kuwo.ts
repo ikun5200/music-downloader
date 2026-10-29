@@ -24,6 +24,10 @@ function cleanText(value: string | undefined): string {
   return toSimplified(
     String(value || '')
       .replace(/&nbsp;/g, ' ')
+      .replace(/&apos;|&#39;/g, "'")
+      .replace(/&quot;|&#34;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/\\&/g, '&')
       .replace(/\\u([0-9a-f]{4})/gi, (_, code: string) =>
         String.fromCharCode(parseInt(code, 16))
       )

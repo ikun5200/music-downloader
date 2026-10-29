@@ -70,6 +70,17 @@ export async function processMetadataForJob(
     }
 
     const candidate = result.candidate
+    // 酷狗的英文歌搜索结果经常缺专辑、用小写标题，甚至带“体验版/黑胶版”。
+    // 下载任务本身的标题/歌手/专辑来自已选中的歌曲，优先保留这些字段。
+    if (candidate.source === 'kugou') {
+      if (job.title) candidate.title = job.title
+      if (job.artist) candidate.artist = job.artist
+      if (job.album) candidate.album = job.album
+      candidate.albumArtist = candidate.albumArtist || job.artist
+    } else {
+      if (!candidate.album && job.album) candidate.album = job.album
+      if (!candidate.albumArtist && job.album) candidate.albumArtist = job.artist
+    }
     const lyricsResult = candidate.lyrics
       ? await cleanLyricsWithAi(candidate.lyrics, {
           title: candidate.title,
@@ -89,6 +100,7 @@ export async function processMetadataForJob(
       // 歌词已在这里按 AI 优先的规则处理完，写标签时不要再跑一次规则清理。
       lyricsCleanCredits: false,
       lyricsSimplify: false,
+      fallbackCoverUrls: job.coverUrl ? [job.coverUrl] : [],
     })
 
     return {

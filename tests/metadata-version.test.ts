@@ -102,4 +102,34 @@ describe('metadata version intent', () => {
     expect(piano.acceptable).toBe(true)
     expect(piano.versionTags).toEqual(expect.arrayContaining(['instrumental', 'piano']))
   })
+
+  it('penalizes candidates without album metadata', () => {
+    const query: MetadataQuery = { ...baseQuery, album: 'Nine Track Mind' }
+    const withAlbum = scoreCandidate(
+      candidate({ title: "We Don't Talk Anymore", album: 'Nine Track Mind' }),
+      query,
+      order
+    )
+    const withoutAlbum = scoreCandidate(
+      candidate({ title: "We Don't Talk Anymore", album: '' }),
+      query,
+      order
+    )
+    expect(withAlbum.score).toBeGreaterThan(withoutAlbum.score)
+  })
+
+  it('rejects trial and vinyl-edition metadata', () => {
+    const trial = scoreCandidate(
+      candidate({ title: 'K歌之王 (体验版)', album: '÷ (Deluxe)' }),
+      baseQuery,
+      order
+    )
+    const vinyl = scoreCandidate(
+      candidate({ title: 'K歌之王 (黑胶版)', album: '21（黑胶版）' }),
+      baseQuery,
+      order
+    )
+    expect(trial.acceptable).toBe(false)
+    expect(vinyl.acceptable).toBe(false)
+  })
 })

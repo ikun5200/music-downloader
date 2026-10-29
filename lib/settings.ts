@@ -61,10 +61,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   metadataScrapeEnabled: true,
   metadataSourceOrder: [
     'itunes',
-    'netease',
-    'kugou',
-    'kuwo',
     'qqmusic',
+    'netease',
+    'kuwo',
+    'kugou',
     'lrclib',
     'theaudiodb',
   ],
