@@ -85,6 +85,18 @@ describe('AI artist validation', () => {
     expect(validateAiArtists('A & B', ['A', 'C'])).toBeNull()
     expect(validateAiArtists("Guns N' Roses", ['Guns N', 'Roses'])).toBeNull()
   })
+
+  it('expands a combined Chinese name returned by AI', () => {
+    expect(validateAiArtists('林忆莲, 张惠妹 & 那英', ['林忆莲, 张惠妹', '那英'])).toEqual([
+      '林忆莲',
+      '张惠妹',
+      '那英',
+    ])
+  })
+
+  it('keeps a short all-caps slash name as one band', () => {
+    expect(validateAiArtists('AC/DC', ['AC', 'DC'])).toBeNull()
+  })
 })
 
 describe('resolveArtists with AI', () => {

@@ -228,9 +228,22 @@ export function validateAiArtists(raw: string, proposed: unknown): string[] | nu
   const deduped = dedupeArtists(out)
   if (!deduped.length) return null
 
+  // AI 偶尔会把“林忆莲, 张惠妹”这种中文逗号列表当成一个名字；再用保守规则展开一次。
+  // 英文乐队名（Simon & Garfunkel、Earth, Wind & Fire、AC/DC）不会被这条规则拆开。
+  const expanded = dedupeArtists(deduped.flatMap((name) => splitArtistsByRules(name)))
+  if (!expanded.length || expanded.length > 30) return null
+
   // 原文没有任何合作分隔符时，不允许 AI 把它拆成多个名字。
-  if (deduped.length > 1 && !AMBIGUOUS_RE.test(decoded)) return null
-  return deduped
+  if (expanded.length > 1 && !AMBIGUOUS_RE.test(decoded)) return null
+  // AC/DC、A/B 这种短的全大写斜杠名按乐队名处理，避免 AI 拆成两个缩写。
+  if (
+    expanded.length > 1 &&
+    /^[A-Za-z0-9.'’]+(?:\/[A-Za-z0-9.'’]+)+$/.test(decoded) &&
+    decoded.split('/').every((part) => part.length <= 3)
+  ) {
+    return null
+  }
+  return expanded
 }
 
 function shouldAskAi(raw: string): boolean {
