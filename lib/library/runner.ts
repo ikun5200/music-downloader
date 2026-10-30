@@ -395,21 +395,38 @@ async function runTask(
   }
 }
 
-async function cleanupStaleTasks(): Promise<void> {
-  const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000)
-  await prisma.libraryTask
-    .updateMany({
-      where: { status: { in: ['queued', 'running'] }, createdAt: { lt: cutoff } },
-      data: { status: 'failed', error: '任务超时或服务重启，已标记失败', finishedAt: new Date() },
+/**
+ * 进程重启后内存里的任务状态会丢失，数据库里却仍然是 queued/running。
+ * 这些任务已经不可能继续执行，必须标记为失败，避免页面一直显示“运行中”。
+ * 当前进程正在跑的任务会出现在 state.types 里，不受影响。
+ */
+export async function recoverInterruptedTasks(): Promise<void> {
+  const active = await prisma.libraryTask
+    .findMany({
+      where: { status: { in: ['queued', 'running'] } },
+      select: { id: true, type: true },
     })
-    .catch(() => {})
+    .catch(() => [])
+  for (const task of active) {
+    if (state.types.has(task.type)) continue
+    await prisma.libraryTask
+      .update({
+        where: { id: task.id },
+        data: {
+          status: 'failed',
+          error: '服务重启，任务已中断，请重新执行',
+          finishedAt: new Date(),
+        },
+      })
+      .catch(() => {})
+  }
 }
 
 export async function startLibraryTask(
   type: LibraryTaskType,
   options: LibraryTaskOptions = {}
 ): Promise<{ task: LibraryTask; existing: boolean }> {
-  await cleanupStaleTasks()
+  await recoverInterruptedTasks()
   const existing = await prisma.libraryTask.findFirst({
     where: { type, status: { in: ['queued', 'running'] } },
     orderBy: { createdAt: 'desc' },

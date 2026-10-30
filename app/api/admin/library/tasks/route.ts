@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { isAdmin } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { ensureRuntime } from '@/lib/runtime'
-import { startLibraryTask } from '@/lib/library/runner'
+import { recoverInterruptedTasks, startLibraryTask } from '@/lib/library/runner'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,6 +24,7 @@ export async function GET(req: Request) {
   if (!(await isAdmin())) {
     return NextResponse.json({ code: 401, message: '未登录' }, { status: 401 })
   }
+  await recoverInterruptedTasks()
   const latest = new URL(req.url).searchParams.get('latest') === '1'
   if (latest) {
     const tasks = await Promise.all(
