@@ -151,6 +151,20 @@ describe('duplicate detection', () => {
     expect(result.groups).toHaveLength(0)
   })
 
+  it('uses the filename subtitle when tags omit it', () => {
+    const files = [
+      file({ path: '甲乙丙丁.flac', title: '甲乙丙丁Strangers', artist: '李佳薇', quickHash: 'a' }),
+      file({
+        path: '甲乙丙丁 (你我怎么两清).flac',
+        title: '甲乙丙丁Strangers',
+        artist: '李佳薇',
+        quickHash: 'b',
+      }),
+    ]
+    const result = findDuplicates(files)
+    expect(result.groups).toHaveLength(0)
+  })
+
   it('still groups files whose only difference is a copy suffix', () => {
     const files = [
       file({ path: '会呼吸的痛.flac', title: '会呼吸的痛', artist: '梁静茹', quickHash: 'a' }),
@@ -196,6 +210,15 @@ describe('album merge analysis', () => {
     expect(result.groups).toHaveLength(1)
     expect(result.groups[0].canonicalAlbum).toBe('叶惠美')
     expect(result.groups[0].canonicalAlbumArtist).toBe('周杰伦')
+  })
+
+  it('does not merge explicit and clean editions', () => {
+    const files = [
+      file({ path: 'a.mp3', title: 'A', artist: 'The Weeknd', album: 'Starboy (Explicit)' }),
+      file({ path: 'b.mp3', title: 'B', artist: 'The Weeknd', album: 'Starboy (Clean)' }),
+    ]
+    const result = findAlbumMerges(files)
+    expect(result.groups).toHaveLength(0)
   })
 
   it('normalizes edition suffixes', () => {

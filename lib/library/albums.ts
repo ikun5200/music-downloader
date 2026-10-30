@@ -9,6 +9,9 @@ import type {
 const EDITION_RE =
   /[\(\[【（][^\)\]】）]*(?:deluxe|special|limited|remaster(?:ed)?|expanded|bonus|anniversary|edition|explicit|clean|豪华|特别|限量|纪念|珍藏|再版|重制|完整|升级|精选)[^\)\]】）]*[\)\]】）]/gi
 
+const CONTENT_VARIANT_RE =
+  /(explicit|clean|super\s*deluxe|超豪华|脏版|Clean版|伴奏|纯音乐|instrumental|live|现场|演唱会)/i
+
 const EDITION_SUFFIX_RE =
   /\s*[-–—]\s*(?:deluxe|special|limited|remaster(?:ed)?|expanded|bonus|anniversary|edition|explicit|clean|豪华版|特别版|限量版|纪念版|珍藏版|再版|重制版|完整版|升级版|精选版).*$/i
 
@@ -98,6 +101,14 @@ export function findAlbumMerges(files: LibraryFile[]): AlbumResult {
     if (list.length < 2) continue
     const albums = albumCounts(list)
     if (albums.length < 2) continue
+    // Explicit/Clean、Live、伴奏、Super Deluxe 等内容版本不能合并，
+    // 否则会把不同内容的专辑混成一张。
+    const contentVariants = new Set(
+      albums
+        .map((item) => (item.album.match(CONTENT_VARIANT_RE) || [])[0]?.toLowerCase())
+        .filter((value): value is string => !!value)
+    )
+    if (contentVariants.size > 1) continue
     const base = albumBaseName(list[0].album)
     if (!base) continue
     const canonical = canonicalAlbum(albums)

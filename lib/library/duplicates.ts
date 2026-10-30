@@ -118,7 +118,9 @@ export function findDuplicates(files: LibraryFile[]): DuplicateResult {
     const version = detectCandidateVersionTags(file.title, file.album).sort().join('+')
     const language = detectCandidateLanguageTags(file.title, file.album).sort().join('+')
     // 括号副标题不同时不要合并，避免把“重生版/粤语版/电影主题曲”当成重复。
-    const key = `${titleKey(file.title)}|${artist}|${version}|${language}|${bracketKey(file.title)}`
+    // 有些文件的标签没带副标题，但文件名带了，所以两处都要看。
+    const brackets = `${bracketKey(file.title)}|${bracketKey(file.path)}`
+    const key = `${titleKey(file.title)}|${artist}|${version}|${language}|${brackets}`
     const list = bySong.get(key) || []
     list.push(file)
     bySong.set(key, list)
