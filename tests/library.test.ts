@@ -81,6 +81,35 @@ describe('library audit', () => {
     expect(result.summary.missingJobFiles).toBe(0)
   })
 
+  it('accepts a job whose scraped metadata matches the file', () => {
+    const files = [
+      file({
+        path: '爱你等于爱自己.flac',
+        title: '爱你等于爱自己',
+        artist: '王力宏',
+        album: '公转.自转',
+      }),
+    ]
+    const result = auditLibrary(files, [
+      {
+        id: 'job-1',
+        title: '爱你等于爱自己',
+        artist: '王力宏',
+        album: 'Evolution 音乐进化论',
+        metadataTitle: '爱你等于爱自己',
+        metadataArtist: '王力宏',
+        metadataAlbum: '公转.自转',
+        filePath: '爱你等于爱自己.flac',
+        status: 'completed',
+        requestedQuality: 'flac',
+        actualQuality: 'flac',
+        qualityVerdict: 'match',
+      },
+    ])
+    const codes = result.issues.flatMap((row) => row.issues.map((item) => item.code))
+    expect(codes).not.toContain('db_mismatch')
+  })
+
   it('detects lyrics headers without removing artist prefixes', () => {
     expect(lyricsHasHeader('作词：徐若瑄\n[00:01.00]故事的小黄花')).toBe(true)
     expect(lyricsHasHeader('[00:01.00]韩红：故事的小黄花\n[00:05.00]第二句')).toBe(false)

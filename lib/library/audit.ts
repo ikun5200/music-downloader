@@ -49,13 +49,17 @@ function sameText(a: string, b: string): boolean {
 }
 
 function jobMatchesFile(job: LibraryJobRef, file: LibraryFile): boolean {
-  if (job.title && file.title && !sameText(job.title, file.title)) return false
-  if (job.artist && file.artist) {
-    const wanted = new Set(artistKeys(job.artist))
+  // 下载后刮削会修正 title/artist/album，记录里的原始值不应再作为比对基准。
+  const title = job.metadataTitle || job.title
+  const artist = job.metadataArtist || job.artist
+  const album = job.metadataAlbum || job.album || ''
+  if (title && file.title && !sameText(title, file.title)) return false
+  if (artist && file.artist) {
+    const wanted = new Set(artistKeys(artist))
     const actual = artistKeys(file.artist)
     if (wanted.size && actual.length && !actual.some((key) => wanted.has(key))) return false
   }
-  if (job.album && file.album && !sameText(job.album, file.album)) return false
+  if (album && file.album && !sameText(album, file.album)) return false
   return true
 }
 

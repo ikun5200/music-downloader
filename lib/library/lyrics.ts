@@ -207,6 +207,9 @@ export function lyricsIssueCodes(file: LibraryFile): string[] {
   if (file.hasLyrics && toSimplified(file.lyrics) !== file.lyrics) {
     codes.push('lyrics_traditional')
   }
+  if (file.hasLyrics && meaningfulLines(file.lyrics).length < 2) {
+    codes.push('lyrics_too_short')
+  }
   return codes
 }
 

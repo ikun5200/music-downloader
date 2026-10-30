@@ -45,6 +45,9 @@ export interface LibraryJobRef {
   title: string
   artist: string
   album: string | null
+  metadataTitle?: string | null
+  metadataArtist?: string | null
+  metadataAlbum?: string | null
   filePath: string | null
   status: string
   requestedQuality: string | null
