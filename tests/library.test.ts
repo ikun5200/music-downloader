@@ -221,6 +221,15 @@ describe('album merge analysis', () => {
     expect(result.groups).toHaveLength(0)
   })
 
+  it('does not merge a plain album with its explicit edition', () => {
+    const files = [
+      file({ path: 'a.mp3', title: 'A', artist: 'Adele', album: '21' }),
+      file({ path: 'b.mp3', title: 'B', artist: 'Adele', album: '21 (Explicit)' }),
+    ]
+    const result = findAlbumMerges(files)
+    expect(result.groups).toHaveLength(0)
+  })
+
   it('normalizes edition suffixes', () => {
     expect(albumBaseName('叶惠美 (Deluxe Edition)')).toBe(albumBaseName('叶惠美'))
     expect(albumBaseName('叶惠美 - Special Edition')).toBe(albumBaseName('叶惠美'))

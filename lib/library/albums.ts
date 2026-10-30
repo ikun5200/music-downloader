@@ -104,9 +104,7 @@ export function findAlbumMerges(files: LibraryFile[]): AlbumResult {
     // Explicit/Clean、Live、伴奏、Super Deluxe 等内容版本不能合并，
     // 否则会把不同内容的专辑混成一张。
     const contentVariants = new Set(
-      albums
-        .map((item) => (item.album.match(CONTENT_VARIANT_RE) || [])[0]?.toLowerCase())
-        .filter((value): value is string => !!value)
+      albums.map((item) => (item.album.match(CONTENT_VARIANT_RE) || [])[0]?.toLowerCase() || '')
     )
     if (contentVariants.size > 1) continue
     const base = albumBaseName(list[0].album)
