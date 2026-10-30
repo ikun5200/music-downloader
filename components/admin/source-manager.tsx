@@ -5,17 +5,20 @@ import {
   ArrowDown,
   ArrowUp,
   BadgeCheck,
+  Link2,
   Loader2,
   Plus,
   RefreshCw,
   Trash2,
   Upload,
+  X,
   Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PlatformBadge } from '@/components/platform-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { PLATFORM_NAMES, QUALITY_NAMES, type Platform } from '@/lib/constants'
 import { cn } from '@/lib/utils'
@@ -52,6 +55,9 @@ export function SourceManager({ initialSources }: { initialSources: SourceDto[] 
   const [sources, setSources] = useState<SourceDto[]>(initialSources)
   const [busy, setBusy] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [urlOpen, setUrlOpen] = useState(false)
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [importing, setImporting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const refresh = useCallback(async () => {
@@ -80,6 +86,33 @@ export function SourceManager({ initialSources }: { initialSources: SourceDto[] 
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  async function importFromUrl() {
+    const url = sourceUrl.trim()
+    if (!url || importing) return
+    setImporting(true)
+    try {
+      const res = await fetch('/api/admin/sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.code !== 0) throw new Error(json.message || '导入失败')
+      await refresh()
+      setUrlOpen(false)
+      setSourceUrl('')
+      if (json.initError) {
+        toast.warning('已导入，但初始化失败', { description: json.initError })
+      } else {
+        toast.success('音源已从 URL 导入并启用')
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -176,6 +209,14 @@ export function SourceManager({ initialSources }: { initialSources: SourceDto[] 
           <Button variant="secondary" size="sm" onClick={() => void refresh()} className="whitespace-nowrap">
             <RefreshCw className="h-3.5 w-3.5" /> 刷新
           </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setUrlOpen((value) => !value)}
+            className="whitespace-nowrap"
+          >
+            <Link2 className="h-3.5 w-3.5" /> 从 URL 导入
+          </Button>
           <Button size="sm" onClick={() => fileRef.current?.click()} disabled={uploading} className="whitespace-nowrap">
             {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
             上传音源
@@ -192,6 +233,49 @@ export function SourceManager({ initialSources }: { initialSources: SourceDto[] 
           />
         </div>
       </div>
+
+      {urlOpen ? (
+        <div className="mt-3 rounded-2xl border border-violet-400/20 bg-violet-500/[0.045] p-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-violet-100/80">
+              <Link2 className="h-3.5 w-3.5" /> 从远程 URL 导入洛雪音源
+            </div>
+            <button
+              type="button"
+              onClick={() => setUrlOpen(false)}
+              className="rounded-md p-1 text-white/30 hover:bg-white/[0.06] hover:text-white/70"
+              aria-label="关闭 URL 导入"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <Input
+              className="h-9 flex-1 font-mono text-[11.5px]"
+              value={sourceUrl}
+              onChange={(e) => setSourceUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void importFromUrl()
+              }}
+              placeholder="https://raw.githubusercontent.com/.../source.js"
+              spellCheck={false}
+              autoFocus
+            />
+            <Button
+              size="sm"
+              className="shrink-0"
+              onClick={() => void importFromUrl()}
+              disabled={importing || !sourceUrl.trim()}
+            >
+              {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+              {importing ? '导入中…' : '导入'}
+            </Button>
+          </div>
+          <p className="mt-1.5 text-[10px] leading-4 text-white/25">
+            只支持 http/https 直链（例如 raw.githubusercontent.com，不是 GitHub 文件页面），单文件不超过 2MB，最多跟随 3 次重定向。导入后会像上传一样初始化并启用；同名音源不会重复导入。
+          </p>
+        </div>
+      ) : null}
 
       <div className="mt-5 space-y-2.5">
         {sources.map((source, index) => {
