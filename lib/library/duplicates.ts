@@ -1,6 +1,6 @@
 import { QUALITY_RANK } from '../constants'
 import { artistKeys, titleKey } from '../metadata/normalize'
-import { detectCandidateVersionTags } from '../version-intent'
+import { detectCandidateLanguageTags, detectCandidateVersionTags } from '../version-intent'
 import type {
   DuplicateFile,
   DuplicateGroup,
@@ -41,6 +41,17 @@ function bestFile(files: LibraryFile[]): LibraryFile {
     if (diff !== 0) return diff
     return a.path.localeCompare(b.path, 'zh-CN')
   })[0]
+}
+
+const BRACKET_RE = /[\(\[【（]([^\)\]】）]*)[\)\]】）]/g
+
+/** 括号里的副标题/版本说明；纯数字 (2) 视为复制副本，不参与区分。 */
+function bracketKey(title: string): string {
+  return [...String(title || '').matchAll(BRACKET_RE)]
+    .map((match) => (match[1] || '').trim().toLowerCase())
+    .filter((text) => !!text && !/^\d+$/.test(text))
+    .sort()
+    .join('|')
 }
 
 function durationClusters(files: LibraryFile[]): LibraryFile[][] {
@@ -105,7 +116,9 @@ export function findDuplicates(files: LibraryFile[]): DuplicateResult {
     if (!file.title || !file.artist) continue
     const artist = artistKeys(file.artist)[0] || titleKey(file.artist)
     const version = detectCandidateVersionTags(file.title, file.album).sort().join('+')
-    const key = `${titleKey(file.title)}|${artist}|${version}`
+    const language = detectCandidateLanguageTags(file.title, file.album).sort().join('+')
+    // 括号副标题不同时不要合并，避免把“重生版/粤语版/电影主题曲”当成重复。
+    const key = `${titleKey(file.title)}|${artist}|${version}|${language}|${bracketKey(file.title)}`
     const list = bySong.get(key) || []
     list.push(file)
     bySong.set(key, list)

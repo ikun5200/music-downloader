@@ -130,6 +130,41 @@ describe('duplicate detection', () => {
     expect(result.groups[0].remove[0].path).toBe('晴天-copy.mp3')
   })
 
+  it('does not merge a re-recorded or language version into the original', () => {
+    const files = [
+      file({ path: '光年之外.flac', title: '光年之外', artist: '邓紫棋', quickHash: 'a' }),
+      file({
+        path: '光年之外 (G.E.M.重生版).flac',
+        title: '光年之外 (G.E.M.重生版)',
+        artist: '邓紫棋',
+        quickHash: 'b',
+      }),
+      file({
+        path: '甲乙丙丁 (粤语版).flac',
+        title: '甲乙丙丁 (粤语版)',
+        artist: '李佳薇',
+        quickHash: 'c',
+      }),
+      file({ path: '甲乙丙丁.flac', title: '甲乙丙丁', artist: '李佳薇', quickHash: 'd' }),
+    ]
+    const result = findDuplicates(files)
+    expect(result.groups).toHaveLength(0)
+  })
+
+  it('still groups files whose only difference is a copy suffix', () => {
+    const files = [
+      file({ path: '会呼吸的痛.flac', title: '会呼吸的痛', artist: '梁静茹', quickHash: 'a' }),
+      file({
+        path: '会呼吸的痛 (2).flac',
+        title: '会呼吸的痛 (2)',
+        artist: '梁静茹',
+        quickHash: 'b',
+      }),
+    ]
+    const result = findDuplicates(files)
+    expect(result.groups).toHaveLength(1)
+  })
+
   it('groups same song at different quality', () => {
     const files = [
       file({ path: '演员.flac', title: '演员', artist: '薛之谦', quality: 'flac', codec: 'flac', quickHash: 'a' }),

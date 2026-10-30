@@ -21,7 +21,7 @@ export const VERSION_TAG_RULES: Array<[VersionTag, RegExp]> = [
   ['cover', /翻唱|cover/i],
   ['acoustic', /acoustic|不插电/i],
   ['demo', /demo|小样/i],
-  ['alternate', /重制|重录|新版|新编|\bversion\b/i],
+  ['alternate', /重制|重录|重唱|重新演唱|重生|修复版|新版|新编|改编|\bversion\b/i],
 ]
 
 export const LANGUAGE_TAG_RULES: Array<[LanguageTag, RegExp]> = [
@@ -58,7 +58,7 @@ const ALBUM_VERSION_RULES: Array<[VersionTag, RegExp]> = [
   ['cover', /翻唱|cover/i],
   ['acoustic', /acoustic|不插电/i],
   ['demo', /demo|小样/i],
-  ['alternate', /重制|重录|新版|新编|(?<!deluxe\s)\bversion\b/i],
+  ['alternate', /重制|重录|重唱|重新演唱|重生|修复版|新版|新编|改编|(?<!deluxe\s)\bversion\b/i],
 ]
 
 export function detectAlbumVersionTags(text: string): VersionTag[] {
@@ -79,7 +79,7 @@ const QUERY_VERSION_RULES: Array<[VersionTag, RegExp]> = [
   ['cover', /^(?:翻唱|cover)(?:版|版本)?$/i],
   ['acoustic', /^(?:acoustic|不插电)(?:版|版本)?$/i],
   ['demo', /^(?:demo|小样)(?:版|版本)?$/i],
-  ['alternate', /^(?:version|重制|重录|新版|新编)(?:版|版本)?$/i],
+  ['alternate', /^(?:version|重制|重录|重唱|重新演唱|重生|修复版|新版|新编|改编)(?:版|版本)?$/i],
 ]
 
 const QUERY_LANGUAGE_RULES: Array<[LanguageTag, RegExp]> = [
