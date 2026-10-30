@@ -18,6 +18,10 @@ export const PLATFORM_COLORS: Record<Platform, string> = {
 }
 
 export const QUALITY_NAMES: Record<string, string> = {
+  '32k': '32k',
+  '48k': '48k',
+  '64k': '64k',
+  '96k': '96k',
   '128k': '128k',
   '192k': '192k',
   '320k': '320k',
@@ -34,6 +38,10 @@ export const QUALITY_NAMES: Record<string, string> = {
 }
 
 export const QUALITY_RANK: Record<string, number> = {
+  '32k': 1,
+  '48k': 1,
+  '64k': 1,
+  '96k': 1,
   '128k': 1,
   '192k': 2,
   '320k': 3,

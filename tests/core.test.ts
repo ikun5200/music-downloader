@@ -77,6 +77,8 @@ describe('quality judgement', () => {
     expect(actualQuality(info({ codec: 'flac', bitsPerRaw: 16, sampleRate: 44100 }))).toBe('flac')
     expect(actualQuality(info({ codec: 'mp3', bitRate: 320000 }))).toBe('320k')
     expect(actualQuality(info({ codec: 'mp3', bitRate: 128000 }))).toBe('128k')
+    expect(actualQuality(info({ codec: 'aac', bitRate: 52000 }))).toBe('64k')
+    expect(actualQuality(info({ codec: 'aac', bitRate: 32000 }))).toBe('32k')
   })
 
   it('chooses the right file extension', () => {

@@ -53,7 +53,10 @@ export function actualQuality(probe: FileAudioInfo): string {
     const br = probe.bitRate || 0
     if (br >= 256000) return '320k'
     if (br >= 160000) return '192k'
-    return '128k'
+    if (br >= 96000) return '128k'
+    if (br >= 48000) return '64k'
+    if (br >= 24000) return '32k'
+    return 'unknown'
   }
   return 'unknown'
 }
