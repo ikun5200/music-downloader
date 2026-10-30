@@ -3,7 +3,7 @@ import path from 'path'
 import { prisma } from '../db'
 import { getDownloadDir } from '../settings'
 import { writeAlbumOnly } from '../metadata/tag'
-import type { LibraryActionFileResult } from './types'
+import type { AuditResult, LibraryActionFileResult } from './types'
 
 export function resolveLibraryPath(relative: string): string | null {
   const root = path.resolve(getDownloadDir())
@@ -85,6 +85,10 @@ export interface AlbumMergeOptions {
   albumArtist?: string
 }
 
+export interface AlbumMergeAllOptions {
+  groups: AlbumMergeOptions[]
+}
+
 export async function mergeAlbums(
   options: AlbumMergeOptions
 ): Promise<LibraryActionFileResult[]> {
@@ -124,4 +128,58 @@ export async function mergeAlbums(
     }
   }
   return results
+}
+
+
+export async function mergeAlbumsBulk(
+  groups: AlbumMergeAllOptions['groups']
+): Promise<LibraryActionFileResult[]> {
+  const results: LibraryActionFileResult[] = []
+  for (const group of groups || []) {
+    results.push(...(await mergeAlbums(group)))
+  }
+  return results
+}
+
+export interface AuditCleanupResult {
+  deleted: number
+  result: AuditResult | null
+}
+
+/**
+ * 删除巡检里“文件已经不存在”的下载记录。只删数据库记录，不碰文件。
+ * 如果带上 taskId，会把该次巡检结果里的 missingFiles 一并删掉并持久化，
+ * 这样页面刷新后也不会再显示这些记录。
+ */
+export async function cleanupMissingDownloadRecords(
+  taskId: string | null | undefined,
+  paths: string[]
+): Promise<AuditCleanupResult> {
+  const unique = [...new Set((paths || []).filter(Boolean))]
+  const deleted = unique.length
+    ? await prisma.downloadJob.deleteMany({ where: { filePath: { in: unique } } })
+    : { count: 0 }
+
+  if (!taskId) return { deleted: deleted.count, result: null }
+  const task = await prisma.libraryTask.findUnique({ where: { id: taskId } })
+  if (!task?.result) return { deleted: deleted.count, result: null }
+
+  try {
+    const result = JSON.parse(task.result) as AuditResult
+    const pathSet = new Set(unique)
+    result.missingFiles = (result.missingFiles || []).filter(
+      (item) => !pathSet.has(item.path)
+    )
+    result.summary.missingJobFiles = result.missingFiles.length
+    const summary = `巡检 ${result.summary.totalFiles} 个文件：${result.summary.errorCount} 个错误、${result.summary.warnCount} 个警告、${result.summary.infoCount} 个提示；${result.missingFiles.length} 条下载记录找不到文件`
+    await prisma.libraryTask
+      .update({
+        where: { id: taskId },
+        data: { result: JSON.stringify(result), summary },
+      })
+      .catch(() => {})
+    return { deleted: deleted.count, result }
+  } catch {
+    return { deleted: deleted.count, result: null }
+  }
 }

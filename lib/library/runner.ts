@@ -2,12 +2,13 @@ import fs from 'fs/promises'
 import type { LibraryTask } from '@prisma/client'
 import { prisma } from '../db'
 import { getAiConfig, getDownloadDir, getSettings } from '../settings'
-import { mapLimit, scanLibrary } from './scan'
+import { inspectLibraryFile, mapLimit, scanLibrary } from './scan'
 import { auditLibrary, lyricsHasHeader } from './audit'
 import { findDuplicates } from './duplicates'
 import { findAlbumMerges } from './albums'
 import { applyLyricsToFile, lyricsIssueCodes, toLyricsItem } from './lyrics'
 import { applyCoverToFile, toCoverItem } from './covers'
+import { resolveLibraryPath } from './actions'
 import type {
   AlbumResult,
   AuditResult,
@@ -155,12 +156,28 @@ async function runTask(
     const checkCover =
       options.checkCover ?? (type === 'audit' || type === 'covers')
 
-    const scanProgress = progressReporter(taskId)
-    const files = await scanLibrary(root, {
-      checkCover,
-      concurrency: 4,
-      onProgress: scanProgress,
-    })
+    // 指定文件（重试失败项、修复待处理项）时只 probe 这些文件，
+    // 不再为了处理一个文件把整个音乐库重新扫描一遍。
+    const requestedPaths =
+      options.apply && options.paths?.length
+        ? [...new Set(options.paths.map((value) => String(value || '').trim()).filter(Boolean))]
+        : null
+    let files: LibraryFile[]
+    if (requestedPaths) {
+      const inspected = await mapLimit(requestedPaths, 4, async (relative) => {
+        const absolute = resolveLibraryPath(relative)
+        if (!absolute) return null
+        return inspectLibraryFile(root, absolute, checkCover)
+      })
+      files = inspected.filter((file): file is LibraryFile => !!file)
+    } else {
+      const scanProgress = progressReporter(taskId)
+      files = await scanLibrary(root, {
+        checkCover,
+        concurrency: 4,
+        onProgress: scanProgress,
+      })
+    }
 
     if (type === 'audit') {
       const result: AuditResult = auditLibrary(files, jobs)
@@ -209,11 +226,11 @@ async function runTask(
       return
     }
 
-    const pathFilter = options.paths?.length ? new Set(options.paths) : null
+    const pathFilter = requestedPaths ? new Set(requestedPaths) : null
     const targets = (type === 'lyrics' ? lyricsTargets(files) : coverTargets(files)).filter(
       (file) => !pathFilter || pathFilter.has(file.path)
     )
-    const total = files.length + (options.apply ? targets.length : 0)
+    const total = requestedPaths ? targets.length : files.length + (options.apply ? targets.length : 0)
 
     if (!options.apply) {
       const items: Array<LyricsWorkflowItem | ReturnType<typeof toCoverItem>> = targets.map(
@@ -288,12 +305,12 @@ async function runTask(
 
     await updateTask(taskId, {
       total,
-      processed: files.length,
-      progress: total ? Math.round((files.length / total) * 100) : 0,
+      processed: requestedPaths ? 0 : files.length,
+      progress: total ? Math.round(((requestedPaths ? 0 : files.length) / total) * 100) : 0,
     })
 
     const aiConfig = await getAiConfig().catch(() => null)
-    const applyProgress = progressReporter(taskId, files.length)
+    const applyProgress = progressReporter(taskId, requestedPaths ? 0 : files.length)
     const results =
       type === 'lyrics'
         ? await mapLimit(

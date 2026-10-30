@@ -215,10 +215,17 @@ function EmptyState({ text }: { text: string }) {
   )
 }
 
-function AuditPanel({ task }: { task: TaskDto | undefined }) {
+function AuditPanel({
+  task,
+  onCleanupMissing,
+}: {
+  task: TaskDto | undefined
+  onCleanupMissing: (taskId: string, paths: string[]) => Promise<void>
+}) {
   const result = parseResult<AuditResult>(task)
   const [filter, setFilter] = useState<'all' | 'error' | 'warn' | 'info'>('all')
   const [showAll, setShowAll] = useState(false)
+  const [cleaning, setCleaning] = useState(false)
   if (!result) return <EmptyState text="还没有巡检结果。点击「开始扫描」逐文件检查音乐库。" />
 
   const rows = result.issues.filter((row) =>
@@ -317,8 +324,32 @@ function AuditPanel({ task }: { task: TaskDto | undefined }) {
 
       {result.missingFiles.length ? (
         <div className="rounded-xl border border-amber-400/15 bg-amber-500/[0.04] px-3 py-2.5">
-          <div className="text-[11px] font-medium text-amber-200/80">
-            下载记录指向的文件不存在（{result.missingFiles.length}）
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[11px] font-medium text-amber-200/80">
+              下载记录指向的文件不存在（{result.missingFiles.length}）
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={cleaning || !task}
+              onClick={() => {
+                if (!task) return
+                const paths = result.missingFiles.map((item) => item.path).filter(Boolean)
+                if (!paths.length) return
+                if (
+                  !window.confirm(
+                    `确认删除 ${paths.length} 条失效下载记录？\n只会删除数据库记录，不会删除任何音乐文件。`
+                  )
+                ) {
+                  return
+                }
+                setCleaning(true)
+                void onCleanupMissing(task.id, paths).finally(() => setCleaning(false))
+              }}
+            >
+              {cleaning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              一键清理失效记录
+            </Button>
           </div>
           <div className="mt-1 max-h-48 space-y-1 overflow-auto">
             {result.missingFiles.slice(0, 100).map((item) => (
@@ -338,16 +369,42 @@ function DuplicatePanel({
   onDelete,
 }: {
   task: TaskDto | undefined
-  onDelete: (paths: string[], deleteFiles: boolean, deleteRecords: boolean) => Promise<void>
+  onDelete: (paths: string[], deleteFiles: boolean, deleteRecords: boolean) => Promise<string[]>
 }) {
   const result = parseResult<DuplicateResult>(task)
+  const [busy, setBusy] = useState(false)
   if (!result) return <EmptyState text="还没有重复检测结果。扫描会同时比对文件内容指纹和歌曲信息。" />
   if (!result.groups.length) return <EmptyState text="没有发现重复文件。" />
+  const allPaths = result.groups.flatMap((group) => group.remove.map((file) => file.path))
   return (
     <div className="mt-4 space-y-3">
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-[11px] text-white/45">
-        {result.summary.groups} 组重复 · 可清理 {result.summary.removableFiles} 个文件 · 约{' '}
-        {formatBytes(result.summary.removableBytes)}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+        <span className="text-[11px] text-white/45">
+          {result.summary.groups} 组重复 · 可清理 {result.summary.removableFiles} 个文件 · 约{' '}
+          {formatBytes(result.summary.removableBytes)}
+        </span>
+        {allPaths.length ? (
+          <Button
+            size="sm"
+            variant="danger"
+            className="ml-auto"
+            disabled={busy}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  `确认一键清理 ${allPaths.length} 个重复文件？\n\n${allPaths.slice(0, 5).join('\n')}${allPaths.length > 5 ? '\n…' : ''}`
+                )
+              ) {
+                return
+              }
+              setBusy(true)
+              void onDelete(allPaths, true, true).finally(() => setBusy(false))
+            }}
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            一键清理全部 {allPaths.length}
+          </Button>
+        ) : null}
       </div>
       {result.groups.map((group) => (
         <DuplicateGroupCard key={group.id} group={group} onDelete={onDelete} />
@@ -361,7 +418,7 @@ function DuplicateGroupCard({
   onDelete,
 }: {
   group: DuplicateGroup
-  onDelete: (paths: string[], deleteFiles: boolean, deleteRecords: boolean) => Promise<void>
+  onDelete: (paths: string[], deleteFiles: boolean, deleteRecords: boolean) => Promise<string[]>
 }) {
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(group.remove.map((file) => file.path))
@@ -469,17 +526,42 @@ function DuplicateGroupCard({
 function AlbumPanel({
   task,
   onMerge,
+  onMergeAll,
 }: {
   task: TaskDto | undefined
   onMerge: (group: AlbumMergeGroup, album: string, albumArtist: string, paths: string[]) => Promise<void>
+  onMergeAll: (groups: AlbumMergeGroup[]) => Promise<void>
 }) {
   const result = parseResult<AlbumResult>(task)
+  const [busy, setBusy] = useState(false)
   if (!result) return <EmptyState text="还没有专辑分析结果。扫描会找出同一专辑的多种写法。" />
   if (!result.groups.length) return <EmptyState text="没有发现需要合并的专辑。" />
+  const fileCount = result.groups.reduce((sum, group) => sum + group.files.length, 0)
   return (
     <div className="mt-4 space-y-3">
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-[11px] text-white/45">
-        {result.summary.groups} 组可合并 · 涉及 {result.summary.mergeableFiles} 个文件
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+        <span className="text-[11px] text-white/45">
+          {result.summary.groups} 组可合并 · 涉及 {result.summary.mergeableFiles} 个文件
+        </span>
+        <Button
+          size="sm"
+          className="ml-auto"
+          disabled={busy}
+          onClick={() => {
+            if (
+              !window.confirm(
+                `确认一键合并 ${result.groups.length} 组专辑、共 ${fileCount} 个文件？\n只修改专辑标签，不会删除文件。`
+              )
+            ) {
+              return
+            }
+            setBusy(true)
+            void onMergeAll(result.groups).finally(() => setBusy(false))
+          }}
+        >
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+          一键全部合并
+        </Button>
       </div>
       {result.groups.map((group) => (
         <AlbumGroupCard key={group.id} group={group} onMerge={onMerge} />
@@ -611,6 +693,7 @@ function WorkflowPanel({
     .filter((item) => item.status === 'not_found' || item.status === 'failed')
     .map((item) => item.path)
   const pending = result.items.filter((item) => item.status === 'skipped').map((item) => item.path)
+  const allPending = [...new Set([...pending, ...retryable])]
 
   async function apply(paths?: string[]) {
     setBusy(true)
@@ -629,15 +712,15 @@ function WorkflowPanel({
           {result.summary.notFound} · 失败 {result.summary.failed}
         </span>
         <div className="ml-auto flex flex-wrap gap-1.5">
-          {pending.length ? (
-            <Button size="sm" disabled={busy} onClick={() => void apply(pending)}>
+          {allPending.length ? (
+            <Button size="sm" disabled={busy} onClick={() => void apply(allPending)}>
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-              修复待处理 {pending.length}
+              一键修复全部 {allPending.length}
             </Button>
           ) : null}
           {retryable.length ? (
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => void apply(retryable)}>
-              <RefreshCw className="h-3.5 w-3.5" /> 重试失败 {retryable.length}
+              <RefreshCw className="h-3.5 w-3.5" /> 仅重试未找到/失败 {retryable.length}
             </Button>
           ) : null}
         </div>
@@ -743,6 +826,23 @@ export function LibraryTools() {
     return () => clearInterval(timer)
   }, [])
 
+  function updateTaskResult<T>(
+    type: LibraryTaskType,
+    mutate: (result: T) => T
+  ) {
+    setTasks((current) => {
+      const task = current[type]
+      if (!task?.result) return current
+      try {
+        const parsed = JSON.parse(task.result) as T
+        const next = mutate(parsed)
+        return { ...current, [type]: { ...task, result: JSON.stringify(next) } }
+      } catch {
+        return current
+      }
+    })
+  }
+
   async function start(type: LibraryTaskType, extra: Record<string, unknown> = {}) {
     try {
       const res = await fetch('/api/admin/library/tasks', {
@@ -760,7 +860,11 @@ export function LibraryTools() {
     }
   }
 
-  async function deleteDuplicates(paths: string[], deleteFiles: boolean, deleteRecords: boolean) {
+  async function deleteDuplicates(
+    paths: string[],
+    deleteFiles: boolean,
+    deleteRecords: boolean
+  ): Promise<string[]> {
     try {
       const res = await fetch('/api/admin/library/actions', {
         method: 'POST',
@@ -774,16 +878,40 @@ export function LibraryTools() {
         failed: number
         results: Array<{ path: string; ok: boolean; note: string }>
       }
+      const okPaths = results.filter((item) => item.ok).map((item) => item.path)
+      if (okPaths.length) {
+        const okSet = new Set(okPaths)
+        updateTaskResult<DuplicateResult>('duplicates', (result) => {
+          const groups = result.groups
+            .map((group) => ({
+              ...group,
+              remove: group.remove.filter((file) => !okSet.has(file.path)),
+            }))
+            .filter((group) => group.remove.length > 0)
+          const remaining = groups.flatMap((group) => group.remove)
+          return {
+            ...result,
+            groups,
+            summary: {
+              ...result.summary,
+              groups: groups.length,
+              removableFiles: remaining.length,
+              removableBytes: remaining.reduce((sum, file) => sum + file.size, 0),
+            },
+          }
+        })
+      }
       if (failed) {
         toast.warning(`完成 ${ok} 个，失败 ${failed} 个`, {
           description: results.find((item) => !item.ok)?.note,
         })
       } else {
-        toast.success(`已处理 ${ok} 个文件`)
+        toast.success(`已处理 ${ok} 个文件，列表已局部更新`)
       }
-      await start('duplicates')
+      return okPaths
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
+      return []
     }
   }
 
@@ -818,9 +946,109 @@ export function LibraryTools() {
           description: results.find((item) => !item.ok)?.note,
         })
       } else {
-        toast.success(`已合并 ${ok} 个文件到「${album}」`)
+        updateTaskResult<AlbumResult>('albums', (result) => {
+          const groups = result.groups.filter((item) => item.id !== group.id)
+          return {
+            ...result,
+            groups,
+            summary: {
+              ...result.summary,
+              groups: groups.length,
+              mergeableFiles: groups.reduce(
+                (sum, item) =>
+                  sum +
+                  item.files.filter((file) => file.album !== item.canonicalAlbum).length,
+                0
+              ),
+            },
+          }
+        })
+        toast.success(`已合并 ${ok} 个文件到「${album}」，列表已局部更新`)
       }
-      await start('albums')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  async function mergeAllAlbums(groups: AlbumMergeGroup[]) {
+    if (!groups.length) return
+    try {
+      const res = await fetch('/api/admin/library/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'album-merge-all',
+          groups: groups.map((group) => ({
+            files: group.files.map((file) => ({ path: file.path })),
+            album: group.canonicalAlbum,
+            albumArtist: group.canonicalAlbumArtist,
+          })),
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.code !== 0) throw new Error(json.message || '批量合并失败')
+      const { ok, failed, results } = json.data as {
+        ok: number
+        failed: number
+        results: Array<{ path: string; ok: boolean; note: string }>
+      }
+      const okSet = new Set(results.filter((item) => item.ok).map((item) => item.path))
+      if (okSet.size) {
+        updateTaskResult<AlbumResult>('albums', (result) => {
+          const nextGroups = result.groups.filter(
+            (group) => !group.files.every((file) => okSet.has(file.path))
+          )
+          return {
+            ...result,
+            groups: nextGroups,
+            summary: {
+              ...result.summary,
+              groups: nextGroups.length,
+              mergeableFiles: nextGroups.reduce(
+                (sum, item) =>
+                  sum +
+                  item.files.filter((file) => file.album !== item.canonicalAlbum).length,
+                0
+              ),
+            },
+          }
+        })
+      }
+      if (failed) {
+        toast.warning(`已合并 ${ok} 个，失败 ${failed} 个，失败项保留在列表中`, {
+          description: results.find((item) => !item.ok)?.note,
+        })
+      } else {
+        toast.success(`已一键合并 ${ok} 个文件，列表已局部更新`)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  async function cleanupMissing(taskId: string, paths: string[]) {
+    try {
+      const res = await fetch('/api/admin/library/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'audit-cleanup', taskId, paths }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.code !== 0) throw new Error(json.message || '清理失败')
+      const data = json.data as { deleted: number; result: AuditResult | null }
+      if (data.result) {
+        const result = data.result
+        const summary = `巡检 ${result.summary.totalFiles} 个文件：${result.summary.errorCount} 个错误、${result.summary.warnCount} 个警告、${result.summary.infoCount} 个提示；${result.missingFiles.length} 条下载记录找不到文件`
+        setTasks((current) => {
+          const task = current.audit
+          if (!task) return current
+          return {
+            ...current,
+            audit: { ...task, result: JSON.stringify(result), summary },
+          }
+        })
+      }
+      toast.success(`已删除 ${data.deleted} 条失效下载记录，未删除任何音乐文件`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     }
@@ -894,9 +1122,9 @@ export function LibraryTools() {
           }
         />
         <TaskProgress task={activeTask} />
-        {tab === 'audit' ? <AuditPanel task={activeTask} /> : null}
+        {tab === 'audit' ? <AuditPanel task={activeTask} onCleanupMissing={cleanupMissing} /> : null}
         {tab === 'duplicates' ? <DuplicatePanel task={activeTask} onDelete={deleteDuplicates} /> : null}
-        {tab === 'albums' ? <AlbumPanel task={activeTask} onMerge={mergeAlbums} /> : null}
+        {tab === 'albums' ? <AlbumPanel task={activeTask} onMerge={mergeAlbums} onMergeAll={mergeAllAlbums} /> : null}
         {tab === 'lyrics' ? (
           <WorkflowPanel type="lyrics" task={activeTask} onApply={(paths) => applyWorkflow('lyrics', paths)} />
         ) : null}
