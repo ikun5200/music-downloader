@@ -364,10 +364,75 @@ export async function writeBasicTags(
   })
 }
 
+export async function writeAlbumOnly(
+  filePath: string,
+  album: string,
+  albumArtist?: string | null
+): Promise<MetadataWriteResult> {
+  const ext = path.extname(filePath).slice(1).toLowerCase()
+  if (!ext) return { ok: false, partial: false, wrote: [], note: '无法识别文件扩展名' }
+  const albumValue = String(album || '').trim()
+  if (!albumValue) return { ok: false, partial: false, wrote: [], note: '专辑名为空' }
+  const stat = await fs.stat(filePath)
+  const output = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath, path.extname(filePath))}.album-${Date.now()}-${process.pid}${path.extname(filePath)}`
+  )
+  try {
+    const args = [
+      '-y',
+      '-nostdin',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      filePath,
+      '-map_metadata',
+      '0',
+      '-map',
+      '0',
+      '-c',
+      'copy',
+      '-metadata',
+      `album=${albumValue}`,
+    ]
+    const artist = String(albumArtist || '').trim()
+    if (artist) args.push('-metadata', `album_artist=${artist}`)
+    if (ext === 'mp3') args.push('-id3v2_version', '3')
+    args.push(output)
+    const result = await run(FFMPEG, args)
+    if (result.code !== 0) {
+      return {
+        ok: false,
+        partial: false,
+        wrote: [],
+        note: `ffmpeg 写入专辑失败：${result.stderr.trim().slice(0, 300) || '未知错误'}`,
+      }
+    }
+    const outputStat = await fs.stat(output)
+    if (!outputStat.size) {
+      return { ok: false, partial: false, wrote: [], note: 'ffmpeg 输出文件为空' }
+    }
+    await fs.chmod(output, stat.mode & 0o777)
+    await replaceFile(output, filePath)
+    return { ok: true, partial: false, wrote: ['专辑'], note: `专辑已统一为 ${albumValue}` }
+  } catch (error) {
+    return {
+      ok: false,
+      partial: false,
+      wrote: [],
+      note: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    await fs.unlink(output).catch(() => {})
+  }
+}
+
 export async function writeLyricsOnly(
   filePath: string,
   lyrics: string
-): Promise<MetadataWriteResult> {  const ext = path.extname(filePath).slice(1).toLowerCase()
+): Promise<MetadataWriteResult> {
+  const ext = path.extname(filePath).slice(1).toLowerCase()
   if (!ext) return { ok: false, partial: false, wrote: [], note: '无法识别文件扩展名' }
   const stat = await fs.stat(filePath)
   const output = path.join(

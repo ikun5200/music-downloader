@@ -15,6 +15,8 @@ export interface CreateDownloadInput {
   artist?: string | null
   album?: string | null
   coverUrl?: string | null
+  /** 用户原始点歌行，保留版本/语言意图供下载前后校验。 */
+  requestLine?: string | null
 }
 
 /** 供站内下载 API 和服务端批量任务共用，保证两边的校验/入队逻辑一致。 */
@@ -60,6 +62,7 @@ export async function createDownloadJob(input: CreateDownloadInput): Promise<Dow
     data: {
       platform,
       songId,
+      requestLine: input.requestLine ? String(input.requestLine).slice(0, 500) : null,
       title,
       artist,
       album,

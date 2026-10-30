@@ -31,6 +31,10 @@ export interface AppSettings {
   metadataAiEnabled: boolean
   /** 是否用 AI 判断 artist 里的 & / , / feat. 是合作分隔还是乐队名的一部分。 */
   metadataArtistAiEnabled: boolean
+  /** 下载前/后让 AI 复核版本与语言。 */
+  aiVersionGuardEnabled: boolean
+  /** 下载渠道失败时，让 AI 跨平台重新识别并兜底。 */
+  aiCrossPlatformFallbackEnabled: boolean
 }
 
 export interface AiConfig {
@@ -78,6 +82,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lyricsAiCleanEnabled: true,
   metadataAiEnabled: true,
   metadataArtistAiEnabled: true,
+  aiVersionGuardEnabled: true,
+  aiCrossPlatformFallbackEnabled: true,
 }
 
 export const METADATA_SOURCES: MetadataSourceId[] = [
@@ -189,6 +195,8 @@ function parseSettings(rows: { key: string; value: string }[]): AppSettings {
     lyricsAiCleanEnabled: (pick('lyricsAiCleanEnabled') ?? 'true') !== 'false',
     metadataAiEnabled: (pick('metadataAiEnabled') ?? 'true') !== 'false',
     metadataArtistAiEnabled: (pick('metadataArtistAiEnabled') ?? 'true') !== 'false',
+    aiVersionGuardEnabled: (pick('aiVersionGuardEnabled') ?? 'true') !== 'false',
+    aiCrossPlatformFallbackEnabled: (pick('aiCrossPlatformFallbackEnabled') ?? 'true') !== 'false',
   }
 }
 
@@ -289,6 +297,12 @@ export async function setSettings(values: SettingsPatch) {
   }
   if (values.metadataArtistAiEnabled != null) {
     entries.push(['metadataArtistAiEnabled', String(values.metadataArtistAiEnabled)])
+  }
+  if (values.aiVersionGuardEnabled != null) {
+    entries.push(['aiVersionGuardEnabled', String(values.aiVersionGuardEnabled)])
+  }
+  if (values.aiCrossPlatformFallbackEnabled != null) {
+    entries.push(['aiCrossPlatformFallbackEnabled', String(values.aiCrossPlatformFallbackEnabled)])
   }
   if (values.aiApiKey !== undefined && !/^[•*]+$/.test(values.aiApiKey)) {
     entries.push(['aiApiKey', values.aiApiKey ? encryptSecret(values.aiApiKey) : ''])

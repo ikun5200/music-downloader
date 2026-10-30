@@ -30,6 +30,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       filePath: null,
       urlHost: null,
       attempts: '[]',
+      fallbackCount: 0,
+      versionCheck: null,
       error: null,
       verified: false,
       reviewNote: null,

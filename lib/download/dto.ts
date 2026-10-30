@@ -32,6 +32,8 @@ export function jobToDto(job: DownloadJob & { channel?: { name: string } | null 
     urlHost: job.urlHost,
     attempts: safeJson(job.attempts, []),
     verified: job.verified,
+    fallbackCount: job.fallbackCount,
+    versionCheck: safeJson(job.versionCheck, null),
     reviewNote: job.reviewNote,
     metadataStatus: job.metadataStatus,
     metadataSource: job.metadataSource,

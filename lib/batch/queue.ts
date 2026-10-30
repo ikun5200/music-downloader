@@ -6,6 +6,7 @@ import { searchAll } from '../search'
 import { getAiConfig, getSettings } from '../settings'
 import { sourceManager } from '../sources/manager'
 import { selectBestSong, type PlatformInfo } from './selector'
+import { checkVersionBeforeDownload } from '../ai/version-guard'
 
 interface BatchQueueState {
   started: boolean
@@ -105,6 +106,23 @@ async function runBatch(batchId: string) {
         aiConfig,
       })
 
+      // 选版 AI 之后再复核一次版本/语言，防止 AI 或规则把 Live/伴奏/纯音乐选成原版。
+      const version = await checkVersionBeforeDownload({
+        requestLine: item.line,
+        title: selection.song.title,
+        album: selection.song.album,
+        candidate: {
+          title: selection.song.title,
+          album: selection.song.album,
+          artist: selection.song.artist,
+        },
+        aiConfig,
+        aiEnabled: settings?.aiVersionGuardEnabled ?? true,
+      })
+      if (!version.ok) {
+        throw new Error(`版本校验未通过：${version.reason || '候选版本不符'}`)
+      }
+
       const afterSearch = await batchStatus(batchId)
       if (afterSearch === 'paused') {
         await prisma.batchItem.update({ where: { id: item.id }, data: { status: 'pending' } })
@@ -124,6 +142,7 @@ async function runBatch(batchId: string) {
         artist: selection.song.artist,
         album: selection.song.album,
         coverUrl: selection.song.coverUrl,
+        requestLine: item.line,
       })
 
       await prisma.$transaction([
@@ -139,7 +158,7 @@ async function runBatch(batchId: string) {
             coverUrl: job.coverUrl,
             musicInfo: JSON.stringify(selection.song.musicInfo),
             downloadJobId: job.id,
-            selectionReason: selection.reason,
+            selectionReason: version.aiUsed ? `${selection.reason}；AI 版本复核通过` : selection.reason,
             aiUsed: selection.aiUsed,
             error: null,
           },

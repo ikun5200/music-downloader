@@ -17,6 +17,8 @@ import { validateFile } from './validator'
 import { processMetadataForJob, type MetadataProcessResult } from '../metadata/process'
 import { writeBasicTags } from '../metadata/tag'
 import { resolveArtists } from '../artists'
+import { checkVersionAfterDownload, type VersionCheckResult } from '../ai/version-guard'
+import { findCrossPlatformFallback } from './fallback'
 
 const cancelControllers = new Map<string, AbortController>()
 const lastProgressAt = new Map<string, number>()
@@ -93,6 +95,7 @@ interface FallbackCandidate {
   channel: RankedChannel
   quality: string
   validation: Awaited<ReturnType<typeof validateFile>>
+  versionCheck?: VersionCheckResult
   bytes: number
   total: number | null
   url: string
@@ -105,6 +108,54 @@ interface HeaderFallback {
   quality: string
   hint: string
   startedAt: number
+}
+
+async function tryCrossPlatformFallback(
+  job: DownloadJob,
+  failedPlatform: Platform
+): Promise<boolean> {
+  try {
+    const fallback = await findCrossPlatformFallback(job, failedPlatform)
+    if (!fallback) return false
+    const song = fallback.selection.song
+    await updateJob(job.id, {
+      platform: fallback.selection.platform,
+      songId: String(song.id),
+      title: song.title,
+      artist: song.artist,
+      album: song.album || null,
+      coverUrl: song.coverUrl || null,
+      musicInfo: JSON.stringify(song.musicInfo),
+      status: 'queued',
+      progress: 0,
+      bytesDone: 0,
+      bytesTotal: null,
+      filePath: null,
+      urlHost: null,
+      actualQuality: null,
+      qualityVerdict: null,
+      channelId: null,
+      verified: false,
+      fallbackCount: { increment: 1 },
+      versionCheck: null,
+      attempts: '[]',
+      error: null,
+      reviewNote: fallback.reason.slice(0, 1000),
+      metadataStatus: 'none',
+      metadataSource: null,
+      metadataTitle: null,
+      metadataArtist: null,
+      metadataAlbum: null,
+      metadataNote: null,
+      metadataAt: null,
+      startedAt: null,
+      finishedAt: null,
+    })
+    return true
+  } catch (error) {
+    console.warn('[download] 跨平台 AI 兜底失败:', error)
+    return false
+  }
 }
 
 async function moveIntoPlace(source: string, dest: string): Promise<void> {
@@ -142,6 +193,7 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
 
   try {
     const settings = await getSettings()
+    const aiConfig = await getAiConfig().catch(() => null)
     const platform = job.platform as Platform
     const musicInfo = safeJson<Record<string, unknown>>(job.musicInfo, {})
     const requestedQuality = capQuality(job.requestedQuality, settings.maxQuality)
@@ -191,11 +243,33 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
         })
         if (!validation.ok) throw new Error(validation.reason || '文件校验失败')
 
+        // 下载后版本校验：文件内嵌标签能看出 Live/伴奏/纯音乐等变体时，
+        // 即使用户没点名版本也拒绝，避免“下载记录是原版、文件是钢琴版”。
+        let versionCheck: VersionCheckResult | undefined
+        if (validation.probe.title || validation.probe.album) {
+          versionCheck = await checkVersionAfterDownload({
+            requestLine: job.requestLine,
+            title: job.title,
+            album: job.album,
+            candidate: {
+              title: validation.probe.title || '',
+              album: validation.probe.album || '',
+              artist: validation.probe.artist || '',
+            },
+            aiConfig,
+            aiEnabled: settings.aiVersionGuardEnabled,
+          })
+          if (!versionCheck.ok) {
+            throw new Error(`版本校验未通过：${versionCheck.reason || '文件版本不符'}`)
+          }
+        }
+
         return {
           tempFile,
           channel,
           quality,
           validation,
+          versionCheck,
           bytes: downloaded.bytes,
           total: downloaded.total,
           url,
@@ -282,6 +356,7 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
         bytesTotal: candidate.total,
         progress: 100,
         verified: candidate.validation.verified,
+        versionCheck: candidate.versionCheck ? JSON.stringify(candidate.versionCheck) : null,
         reviewNote: downgraded
           ? `请求 ${requested}，实际最高可用 ${candidate.validation.actualQuality}`
           : candidate.validation.reviewNote || null,
@@ -460,6 +535,7 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
       .slice(-10)
       .map((a) => `${a.sourceName}/${a.quality}: ${a.error}`)
       .join(' | ')
+    if (await tryCrossPlatformFallback(job, platform)) return
     await updateJob(job.id, {
       status: 'failed',
       progress: 0,
@@ -475,6 +551,9 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
     const message = e instanceof Error ? e.message : String(e)
     const paused = controller.signal.aborted && /暂停/.test(reasonText)
     const canceled = controller.signal.aborted && /取消/.test(reasonText)
+    if (!paused && !canceled && (await tryCrossPlatformFallback(job, job.platform as Platform))) {
+      return
+    }
     await updateJob(job.id, {
       status: paused ? 'paused' : canceled ? 'canceled' : 'failed',
       attempts: JSON.stringify(attempts.slice(-30)),

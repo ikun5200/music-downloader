@@ -39,6 +39,8 @@ const schema = z.object({
   lyricsAiCleanEnabled: z.boolean().optional(),
   metadataAiEnabled: z.boolean().optional(),
   metadataArtistAiEnabled: z.boolean().optional(),
+  aiVersionGuardEnabled: z.boolean().optional(),
+  aiCrossPlatformFallbackEnabled: z.boolean().optional(),
 })
 
 export async function GET() {

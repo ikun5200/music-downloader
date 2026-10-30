@@ -89,6 +89,10 @@ export function SettingsForm({
   const [metadataArtistAiEnabled, setMetadataArtistAiEnabled] = useState(
     initial.metadataArtistAiEnabled
   )
+  const [aiVersionGuard, setAiVersionGuard] = useState(initial.aiVersionGuardEnabled)
+  const [aiCrossPlatformFallback, setAiCrossPlatformFallback] = useState(
+    initial.aiCrossPlatformFallbackEnabled
+  )
   const [rescraping, setRescraping] = useState(false)
   const [testingAi, setTestingAi] = useState(false)
   const [clearingAi, setClearingAi] = useState(false)
@@ -170,6 +174,8 @@ export function SettingsForm({
           lyricsAiCleanEnabled,
           metadataAiEnabled,
           metadataArtistAiEnabled,
+          aiVersionGuardEnabled: aiVersionGuard,
+          aiCrossPlatformFallbackEnabled: aiCrossPlatformFallback,
         }),
       })
       const json = await res.json()
@@ -672,6 +678,35 @@ export function SettingsForm({
                 onChange={setMetadataArtistAiEnabled}
                 disabled={!aiReady}
                 label="AI 识别歌手/乐队名"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-[11px] text-white/55">AI 版本校验</div>
+                <div className="mt-0.5 text-[10px] leading-4 text-white/25">
+                  下载前确认候选是正式版（排除 live/翻唱/伴奏/remix）；下载后核对实际文件标题与专辑。
+                  AI 只做建议，规则否决时不会被推翻；失败自动回退规则。
+                </div>
+              </div>
+              <Switch
+                checked={aiVersionGuard}
+                onChange={setAiVersionGuard}
+                disabled={!aiReady}
+                label="AI 版本校验"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-[11px] text-white/55">跨平台 AI 兜底</div>
+                <div className="mt-0.5 text-[10px] leading-4 text-white/25">
+                  当前平台下载失败时，换一个平台重新搜索，并由 AI 重新识别、重新选版；每个任务最多兜底一次。
+                </div>
+              </div>
+              <Switch
+                checked={aiCrossPlatformFallback}
+                onChange={setAiCrossPlatformFallback}
+                disabled={!aiReady}
+                label="跨平台 AI 兜底"
               />
             </div>
             {!aiReady ? (

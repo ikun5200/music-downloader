@@ -48,6 +48,7 @@ model DownloadJob {
   id               String    @id @default(cuid())
   platform         String
   songId           String
+  requestLine      String?
   title            String
   artist           String
   album            String?
@@ -65,6 +66,8 @@ model DownloadJob {
   urlHost          String?
   attempts         String    @default("[]")
   verified         Boolean   @default(false)
+  fallbackCount    Int       @default(0)
+  versionCheck     String?
   reviewNote       String?
   metadataStatus   String    @default("none")
   metadataSource   String?
@@ -139,4 +142,23 @@ model BatchItem {
   batch           BatchJob  @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
   @@index([batchId, status])
+}
+
+model LibraryTask {
+  id         String    @id @default(cuid())
+  type       String
+  status     String    @default("queued")
+  options    String?
+  total      Int       @default(0)
+  processed  Int       @default(0)
+  progress   Int       @default(0)
+  summary    String?
+  result     String?
+  error      String?
+  createdAt  DateTime  @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  @@index([type, createdAt])
+  @@index([status])
 }

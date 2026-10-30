@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 import {
   ArrowLeft,
+  Library,
   LayoutDashboard,
   Layers,
   LogOut,
@@ -15,6 +16,7 @@ import { cn } from '@/lib/utils'
 
 const links = [
   { href: '/admin', label: '概览', icon: LayoutDashboard },
+  { href: '/admin/library', label: '音乐库工具', icon: Library },
   { href: '/admin/sources', label: '音源渠道', icon: Layers },
   { href: '/admin/settings', label: '设置', icon: SlidersHorizontal },
   { href: '/admin/api', label: '洛雪 API', icon: PlugZap },
