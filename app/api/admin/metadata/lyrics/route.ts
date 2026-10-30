@@ -6,7 +6,7 @@ import { resolveDownloadRoot } from '@/lib/download/filename'
 import { ffprobeFile } from '@/lib/download/probe'
 import { cleanLyricsWithAi } from '@/lib/metadata/lyrics-ai'
 import { writeLyricsOnly } from '@/lib/metadata/tag'
-import { getAiConfig, getSettings } from '@/lib/settings'
+import { cpuScanConcurrency, getAiConfig, getSettings } from '@/lib/settings'
 import { ensureRuntime } from '@/lib/runtime'
 
 export const runtime = 'nodejs'
@@ -142,7 +142,10 @@ export async function POST() {
     }
 
     // 每首最多一次 AI 请求，限制并发避免本地 AI 服务被瞬时打满。
-    const concurrency = Math.min(4, files.length || 1)
+    const concurrency = Math.min(
+      cpuScanConcurrency(settings.cpuLimitPercent),
+      files.length || 1
+    )
     let cursor = 0
     const outcomes: Array<Awaited<ReturnType<typeof processFile>>> = new Array(files.length)
     const worker = async () => {

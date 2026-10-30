@@ -2,7 +2,7 @@ import path from 'path'
 import type { DownloadJob } from '@prisma/client'
 import { prisma, withDbRetry } from '../db'
 import { resolveDownloadRoot } from '../download/filename'
-import { getSettings } from '../settings'
+import { cpuScanConcurrency, getSettings } from '../settings'
 import { processMetadataForJob } from './process'
 
 interface MetadataQueueState {
@@ -76,7 +76,9 @@ async function tick() {
   if (state.ticking) return
   state.ticking = true
   try {
-    while (state.running.size < CONCURRENCY) {
+    const settings = await getSettings()
+    const concurrency = Math.min(CONCURRENCY, cpuScanConcurrency(settings.cpuLimitPercent))
+    while (state.running.size < concurrency) {
       const job = await claimJob()
       if (!job) break
       state.running.add(job.id)

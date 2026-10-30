@@ -75,7 +75,7 @@ export async function pickMetadataWithAi(
           JSON.stringify(payload),
       },
     ],
-    { timeoutMs: 20_000, maxTokens: 300 }
+    { timeoutMs: 20_000, maxTokens: 300, feature: '元数据纠错' }
   )
 
   const parsed = extractJsonObject(reply)

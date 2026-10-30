@@ -28,7 +28,7 @@ export async function POST() {
         { role: 'system', content: '你是一个连通性测试助手，只返回 JSON。' },
         { role: 'user', content: '请只返回 {"ok":true}' },
       ],
-      { timeoutMs: 15_000, maxTokens: 40 }
+      { timeoutMs: 15_000, maxTokens: 40, feature: '连接测试' }
     )
     return NextResponse.json({
       code: 0,

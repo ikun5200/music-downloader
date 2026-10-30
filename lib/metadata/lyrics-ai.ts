@@ -93,7 +93,7 @@ export async function cleanLyricsWithAi(
             '\n返回 {"firstLyricLine": 数字}。',
         },
       ],
-      { timeoutMs: 20_000, maxTokens: 80 }
+      { timeoutMs: 20_000, maxTokens: 80, feature: '歌词清理' }
     )
     const parsed = extractJsonObject(reply)
     const index = Number(parsed?.firstLyricLine)

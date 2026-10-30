@@ -21,6 +21,7 @@ import { Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { PLATFORMS, PLATFORM_NAMES, type Platform } from '@/lib/constants'
 import { QUALITY_CAP_LABELS, QUALITY_CAPS, type QualityCap } from '@/lib/download/quality-cap'
+import { AiUsagePanel } from './ai-usage-panel'
 import { cn } from '@/lib/utils'
 import type { AppSettings, QualityStrategy } from '@/lib/settings'
 import type { MetadataSourceId } from '@/lib/metadata/types'
@@ -64,6 +65,7 @@ export function SettingsForm({
   const [strategy, setStrategy] = useState<QualityStrategy>(initial.qualityStrategy)
   const [maxQuality, setMaxQuality] = useState<QualityCap>(initial.maxQuality)
   const [maxConcurrent, setMaxConcurrent] = useState(String(initial.maxConcurrent))
+  const [cpuLimit, setCpuLimit] = useState(String(initial.cpuLimitPercent))
   const [template, setTemplate] = useState(initial.filenameTemplate)
   const [maxSize, setMaxSize] = useState(String(initial.maxFileSizeMb))
   const [verify, setVerify] = useState(initial.verifyWrongSong)
@@ -152,6 +154,7 @@ export function SettingsForm({
           qualityStrategy: strategy,
           maxQuality,
           maxConcurrent: Number(maxConcurrent),
+          cpuLimitPercent: Number(cpuLimit),
           filenameTemplate: template,
           maxFileSizeMb: Number(maxSize),
           verifyWrongSong: verify,
@@ -378,6 +381,22 @@ export function SettingsForm({
             免费音源接口普遍有 QPS 限制，建议保持 1–2。
           </p>
 
+          <label className="mt-4 block text-[11px] text-white/35">音乐库/刮削 CPU 使用上限</label>
+          <Select
+            className="mt-1.5 w-full"
+            value={cpuLimit}
+            onChange={(e) => setCpuLimit(e.target.value)}
+          >
+            <option value="25">25%（保守，优先保证其他服务）</option>
+            <option value="50">50%（平衡，推荐）</option>
+            <option value="75">75%（较快）</option>
+            <option value="100">100%（不限制并发）</option>
+          </Select>
+          <p className="mt-1.5 text-[10.5px] leading-4 text-white/25">
+            控制巡检、歌词/封面工作流、目录扫描、后台刮削以及实际下载并发；同时整个进程以低调度优先级运行。
+            「最大并发下载数」是另一个上限，最终取两者中较小的值。
+          </p>
+
           <div className="mt-4 flex items-center justify-between gap-4">
             <div>
               <div className="text-[11px] text-white/55">错歌/占位音频校验</div>
@@ -524,6 +543,8 @@ export function SettingsForm({
           </span>
         </div>
       </div>
+
+      <AiUsagePanel />
 
       <div className="mt-3 lift rounded-2xl border border-white/[0.06] bg-white/[0.022] p-5 hover:border-white/[0.1]">
         <div className="flex flex-wrap items-center justify-between gap-3">

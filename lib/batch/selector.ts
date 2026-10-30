@@ -263,7 +263,11 @@ async function chooseWithAi(
   ]
 
   try {
-    const content = await chat(aiConfig, messages, { timeoutMs: 25_000, maxTokens: 300 })
+    const content = await chat(aiConfig, messages, {
+      timeoutMs: 25_000,
+      maxTokens: 300,
+      feature: '选版',
+    })
     const parsed = extractJsonObject(content)
     const index = Number(parsed?.index)
     const reason = String(parsed?.reason || '').slice(0, 240)

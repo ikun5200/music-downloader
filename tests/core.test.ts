@@ -6,6 +6,7 @@ import { actualQuality, extensionFor, judgeQuality } from '../lib/download/quali
 import { parseFlacStreamInfo } from '../lib/download/probe'
 import type { FileAudioInfo } from '../lib/download/probe'
 import type { RawSearchSong } from '../lib/search/types'
+import { cpuScanConcurrency } from '../lib/settings'
 
 function song(title: string, artist: string): RawSearchSong {
   return {
@@ -20,6 +21,16 @@ function song(title: string, artist: string): RawSearchSong {
 function info(partial: Partial<FileAudioInfo>): FileAudioInfo {
   return { ok: true, ...partial }
 }
+
+describe('CPU limit', () => {
+  it('maps a CPU percentage to bounded scan concurrency', () => {
+    expect(cpuScanConcurrency(25)).toBe(1)
+    expect(cpuScanConcurrency(50)).toBe(2)
+    expect(cpuScanConcurrency(75)).toBe(3)
+    expect(cpuScanConcurrency(100)).toBe(4)
+    expect(cpuScanConcurrency(0)).toBe(2)
+  })
+})
 
 describe('sanitizeFilename', () => {
   it('removes path separators and control characters', () => {

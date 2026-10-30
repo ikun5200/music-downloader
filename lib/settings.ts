@@ -10,6 +10,8 @@ export interface AppSettings {
   qualityStrategy: QualityStrategy
   maxQuality: QualityCap
   maxConcurrent: number
+  /** 音乐库扫描/歌词/封面/刮削的 CPU 使用上限（百分比）。 */
+  cpuLimitPercent: number
   filenameTemplate: string
   maxFileSizeMb: number
   verifyWrongSong: boolean
@@ -54,6 +56,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   qualityStrategy: 'highest',
   maxQuality: 'auto',
   maxConcurrent: Number(process.env.MAX_CONCURRENT_DOWNLOADS || 2) || 2,
+  cpuLimitPercent: 25,
   filenameTemplate: '{title}.{ext}',
   maxFileSizeMb: 1024,
   verifyWrongSong: true,
@@ -172,6 +175,10 @@ function parseSettings(rows: { key: string; value: string }[]): AppSettings {
       1,
       Math.min(8, Number(pick('maxConcurrent') || DEFAULT_SETTINGS.maxConcurrent) || 2)
     ),
+    cpuLimitPercent: Math.max(
+      10,
+      Math.min(100, Number(pick('cpuLimitPercent') || DEFAULT_SETTINGS.cpuLimitPercent) || 25)
+    ),
     filenameTemplate: pick('filenameTemplate') || DEFAULT_SETTINGS.filenameTemplate,
     maxFileSizeMb: Math.max(
       64,
@@ -250,6 +257,12 @@ export async function setSettings(values: SettingsPatch) {
   if (values.qualityStrategy) entries.push(['qualityStrategy', values.qualityStrategy])
   if (values.maxQuality) entries.push(['maxQuality', normalizeQualityCap(values.maxQuality)])
   if (values.maxConcurrent != null) entries.push(['maxConcurrent', String(values.maxConcurrent)])
+  if (values.cpuLimitPercent != null) {
+    entries.push([
+      'cpuLimitPercent',
+      String(Math.max(10, Math.min(100, Math.round(values.cpuLimitPercent)))),
+    ])
+  }
   if (values.filenameTemplate) entries.push(['filenameTemplate', values.filenameTemplate])
   if (values.maxFileSizeMb != null) entries.push(['maxFileSizeMb', String(values.maxFileSizeMb)])
   if (values.verifyWrongSong != null) entries.push(['verifyWrongSong', String(values.verifyWrongSong)])
@@ -320,4 +333,15 @@ export function getDisplayDownloadDir(): string {
 
 export function getPublicBaseUrl(): string {
   return (process.env.PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '')
+}
+
+
+/** 把 CPU 上限换算成音乐库扫描/刮削的并发数；100% 时最多 4 路。 */
+export function cpuScanConcurrency(percent: number | null | undefined): number {
+  const value = Number(percent)
+  if (!Number.isFinite(value) || value <= 0) return 2
+  if (value >= 90) return 4
+  if (value >= 65) return 3
+  if (value >= 40) return 2
+  return 1
 }

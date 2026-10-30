@@ -1,7 +1,7 @@
 import fs from 'fs/promises'
 import type { LibraryTask } from '@prisma/client'
 import { prisma } from '../db'
-import { getAiConfig, getDownloadDir, getSettings } from '../settings'
+import { cpuScanConcurrency, getAiConfig, getDownloadDir, getSettings } from '../settings'
 import { inspectLibraryFile, mapLimit, scanLibrary } from './scan'
 import { auditLibrary, lyricsHasHeader } from './audit'
 import { findDuplicates } from './duplicates'
@@ -155,6 +155,7 @@ async function runTask(
     const jobs = await loadJobs()
     const checkCover =
       options.checkCover ?? (type === 'audit' || type === 'covers')
+    const concurrency = cpuScanConcurrency(settings.cpuLimitPercent)
 
     // 指定文件（重试失败项、修复待处理项）时只 probe 这些文件，
     // 不再为了处理一个文件把整个音乐库重新扫描一遍。
@@ -164,7 +165,7 @@ async function runTask(
         : null
     let files: LibraryFile[]
     if (requestedPaths) {
-      const inspected = await mapLimit(requestedPaths, 4, async (relative) => {
+      const inspected = await mapLimit(requestedPaths, concurrency, async (relative) => {
         const absolute = resolveLibraryPath(relative)
         if (!absolute) return null
         return inspectLibraryFile(root, absolute, checkCover)
@@ -174,7 +175,7 @@ async function runTask(
       const scanProgress = progressReporter(taskId)
       files = await scanLibrary(root, {
         checkCover,
-        concurrency: 4,
+        concurrency,
         onProgress: scanProgress,
       })
     }
@@ -315,7 +316,7 @@ async function runTask(
       type === 'lyrics'
         ? await mapLimit(
             targets,
-            2,
+            Math.min(2, concurrency),
             async (file) => {
               const applied = await applyLyricsToFile(root, file, settings, aiConfig)
               return toLyricsItem(file, applied)
@@ -324,7 +325,7 @@ async function runTask(
           )
         : await mapLimit(
             targets,
-            2,
+            Math.min(2, concurrency),
             async (file) => {
               const applied = await applyCoverToFile(root, file, settings)
               return toCoverItem(file, applied)

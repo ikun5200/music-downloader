@@ -329,6 +329,7 @@ export async function resolveArtists(
     const reply = await chat(options.aiConfig!, messages, {
       timeoutMs: 15_000,
       maxTokens: 400,
+      feature: '歌手识别',
     })
     const parsed = extractJsonObject(reply)
     const artists = validateAiArtists(raw, parsed?.artists)

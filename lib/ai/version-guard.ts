@@ -188,7 +188,7 @@ export async function checkVersion(
           }),
         },
       ],
-      { timeoutMs: 12_000, maxTokens: 220 }
+      { timeoutMs: 12_000, maxTokens: 220, feature: '版本校验' }
     )
     const parsed = extractJsonObject(reply)
     if (!parsed || typeof parsed.ok !== 'boolean') return fallback

@@ -59,7 +59,11 @@ export async function cleanSongTitle(
         content: JSON.stringify({ title: original, artist: artist || '' }),
       },
     ]
-    const content = await chat(config, messages, { timeoutMs: 15_000, maxTokens: 120 })
+    const content = await chat(config, messages, {
+      timeoutMs: 15_000,
+      maxTokens: 120,
+      feature: '歌名清理',
+    })
     const parsed = extractJsonObject(content)
     const cleaned = String(parsed?.title || '')
       .replace(/\s+/g, ' ')

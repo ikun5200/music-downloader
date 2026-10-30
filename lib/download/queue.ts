@@ -1,6 +1,6 @@
 import type { DownloadJob } from '@prisma/client'
 import { prisma } from '../db'
-import { getSettings } from '../settings'
+import { cpuScanConcurrency, getSettings } from '../settings'
 import { runPipeline, cancelJob, pauseJob } from './pipeline'
 
 interface QueueState {
@@ -97,7 +97,11 @@ async function tick() {
   state.ticking = true
   try {
     const settings = await getSettings()
-    const max = Math.max(1, settings.maxConcurrent || 2)
+    // CPU 上限较低时同时压低实际下载并发，避免下载完成后的 ffmpeg 写标签和扫描抢 CPU。
+    const max = Math.max(
+      1,
+      Math.min(settings.maxConcurrent || 2, cpuScanConcurrency(settings.cpuLimitPercent))
+    )
 
     while (state.running.size < max) {
       const job = await claimJob()

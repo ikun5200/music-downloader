@@ -13,6 +13,7 @@ const schema = z.object({
   qualityStrategy: z.enum(['highest', 'strict', 'flacFirst']).optional(),
   maxQuality: z.enum(QUALITY_CAPS).optional(),
   maxConcurrent: z.number().int().min(1).max(8).optional(),
+  cpuLimitPercent: z.number().int().min(10).max(100).optional(),
   filenameTemplate: z.string().min(1).max(200).optional(),
   maxFileSizeMb: z.number().int().min(64).max(4096).optional(),
   verifyWrongSong: z.boolean().optional(),

@@ -9,6 +9,7 @@ import { ffprobeFile, type FileAudioInfo } from '@/lib/download/probe'
 import { actualQuality } from '@/lib/download/quality'
 import { wakeMetadataQueue } from '@/lib/metadata/queue'
 import { ensureRuntime } from '@/lib/runtime'
+import { cpuScanConcurrency, getSettings } from '@/lib/settings'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -35,7 +36,6 @@ const AUDIO_EXT = new Set([
 
 const MAX_FILES = 2000
 const MAX_DEPTH = 8
-const PROBE_CONCURRENCY = 4
 
 const globalForScan = globalThis as unknown as { __mdScanning?: boolean }
 
@@ -170,6 +170,8 @@ export async function POST() {
   globalForScan.__mdScanning = true
   try {
     const root = resolveDownloadRoot()
+    const settings = await getSettings()
+    const concurrency = cpuScanConcurrency(settings.cpuLimitPercent)
     const { files, truncated } = await walkAudioFiles(root)
     const existingJobs = await prisma.downloadJob.findMany({
       where: { filePath: { not: null } },
@@ -244,7 +246,7 @@ export async function POST() {
       newFiles.push({ absolute, relative })
     }
 
-    const probed = await mapLimit(newFiles, PROBE_CONCURRENCY, async (file) => {
+    const probed = await mapLimit(newFiles, concurrency, async (file) => {
       try {
         const stat = await fs.stat(file.absolute)
         const info = await ffprobeFile(file.absolute)

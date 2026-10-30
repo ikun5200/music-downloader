@@ -1,4 +1,5 @@
 import fs from 'fs/promises'
+import os from 'os'
 import path from 'path'
 import { prisma } from './db'
 import { ensureDownloadDirs } from './download/filename'
@@ -13,6 +14,13 @@ const globalForBootstrap = globalThis as unknown as { __mdBootstrap?: Promise<vo
 
 async function runBootstrap() {
   await ensureDirs()
+  // 降低整个 Node 进程和它派生的 ffprobe/ffmpeg 的调度优先级，
+  // 避免音乐库扫描/刮削和 NAS 上的其他服务抢 CPU。
+  try {
+    os.setPriority(process.pid, 10)
+  } catch {
+    // 某些平台/权限不允许调整优先级，忽略即可。
+  }
   await prisma.$connect()
   // WAL 让读请求不必等待写入；busy_timeout 让写请求排队而不是直接报错。
   await prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL').catch((e) => {

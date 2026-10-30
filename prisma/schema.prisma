@@ -162,3 +162,19 @@ model LibraryTask {
   @@index([type, createdAt])
   @@index([status])
 }
+
+model AiUsageLog {
+  id               String   @id @default(cuid())
+  feature          String   @default("其他")
+  model            String?
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  latencyMs        Int      @default(0)
+  success          Boolean  @default(true)
+  error            String?
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([feature, createdAt])
+}
