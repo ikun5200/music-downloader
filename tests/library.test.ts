@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { auditLibrary, lyricsHasHeader } from '../lib/library/audit'
 import { albumBaseName, findAlbumMerges } from '../lib/library/albums'
+import { artistKeys } from '../lib/metadata/normalize'
 import { findDuplicates } from '../lib/library/duplicates'
 import { lyricsLookUsable } from '../lib/library/lyrics'
 import type { LibraryFile } from '../lib/library/types'
@@ -138,6 +139,14 @@ describe('duplicate detection', () => {
     expect(result.groups).toHaveLength(1)
     expect(result.groups[0].kind).toBe('version')
     expect(result.groups[0].keep.path).toBe('演员.flac')
+  })
+})
+
+describe('library matching', () => {
+  it('treats full-width separators as their ASCII equivalents', () => {
+    expect(artistKeys('Selena Gomez ＆ The Scene')).toEqual(
+      artistKeys('Selena Gomez & The Scene')
+    )
   })
 })
 

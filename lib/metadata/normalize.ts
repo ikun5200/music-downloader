@@ -129,9 +129,16 @@ function artistKey(value: string): string {
 }
 
 export function artistKeys(value: string): string[] {
+  const normalized = String(value || '')
+    .replace(/＆/g, '&')
+    .replace(/／/g, '/')
+    .replace(/＼/g, '\\')
+    .replace(/｜/g, '|')
+    .replace(/﹔/g, ';')
+    .replace(/・/g, '、')
   return [
     ...new Set(
-      (value || '')
+      normalized
         .split(ARTIST_SPLIT_RE)
         .map((part) => artistKey(part))
         .filter(Boolean)

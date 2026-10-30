@@ -10,6 +10,13 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 export function normalizeText(value: unknown): string {
   return String(value ?? '')
     .replace(/\u00a0/g, ' ')
+    // 飞牛/标签里为了阻止拆分会把分隔符写成全角，做匹配时还原。
+    .replace(/＆/g, '&')
+    .replace(/／/g, '/')
+    .replace(/＼/g, '\\')
+    .replace(/｜/g, '|')
+    .replace(/﹔/g, ';')
+    .replace(/・/g, '、')
     .replace(/[（(][^）)]*[）)]/g, ' ')
     .replace(/[\s·・\-—_/\\]+/g, '')
     .toLowerCase()
