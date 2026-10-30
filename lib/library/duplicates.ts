@@ -164,6 +164,14 @@ export function findDuplicates(files: LibraryFile[]): DuplicateResult {
     0
   )
   const removableFiles = groups.reduce((sum, group) => sum + group.remove.length, 0)
+  const groupedPaths = new Set(
+    groups.flatMap((group) => [group.keep.path, ...group.remove.map((file) => file.path)])
+  )
+  const sameNameCopies = files.filter(
+    (file) =>
+      /(?:[（(]\d+[）)])$/.test(file.path.replace(/\.[^.]+$/, '')) &&
+      !groupedPaths.has(file.path)
+  )
 
   return {
     summary: {
@@ -178,6 +186,8 @@ export function findDuplicates(files: LibraryFile[]): DuplicateResult {
       groups: groups.length,
       removableFiles,
       removableBytes,
+      sameNameCopies: sameNameCopies.length,
+      sameNameExamples: sameNameCopies.slice(0, 8).map((file) => file.path),
     },
     groups,
   }

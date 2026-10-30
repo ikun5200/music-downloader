@@ -28,13 +28,17 @@ export interface LibraryTaskOptions {
 }
 
 interface RunningState {
-  types: Set<string>
+  /** 任务类型 -> 当前任务 ID，用来避免旧任务的 finally 清掉新任务的状态。 */
+  tasks: Map<string, string>
 }
 
-const globalForLibrary = globalThis as unknown as { __mdLibraryRunning?: RunningState }
+const globalForLibrary = globalThis as unknown as {
+  __mdLibraryRunning?: { tasks?: Map<string, string> }
+}
 const state: RunningState =
-  globalForLibrary.__mdLibraryRunning ||
-  (globalForLibrary.__mdLibraryRunning = { types: new Set() })
+  globalForLibrary.__mdLibraryRunning?.tasks
+    ? (globalForLibrary.__mdLibraryRunning as RunningState)
+    : (globalForLibrary.__mdLibraryRunning = { tasks: new Map() })
 
 const TYPE_LABELS: Record<LibraryTaskType, string> = {
   audit: '完整性巡检',
@@ -242,7 +246,7 @@ async function runTask(
                 title: file.title,
                 artist: file.artist,
                 album: file.album,
-                status: 'skipped',
+                status: 'pending',
                 note: `待修复：${lyricsTargetNote(file)}`,
               }
             : {
@@ -250,7 +254,7 @@ async function runTask(
                 title: file.title,
                 artist: file.artist,
                 album: file.album,
-                status: 'skipped',
+                status: 'pending',
                 note: `待修复：${coverTargetNote(file)}`,
               }
       )
@@ -392,14 +396,14 @@ async function runTask(
       finishedAt: new Date(),
     })
   } finally {
-    state.types.delete(type)
+    if (state.tasks.get(type) === taskId) state.tasks.delete(type)
   }
 }
 
 /**
  * 进程重启后内存里的任务状态会丢失，数据库里却仍然是 queued/running。
  * 这些任务已经不可能继续执行，必须标记为失败，避免页面一直显示“运行中”。
- * 当前进程正在跑的任务会出现在 state.types 里，不受影响。
+ * 当前进程正在跑的任务会出现在 state.tasks 里，不受影响。
  */
 export async function recoverInterruptedTasks(): Promise<void> {
   const active = await prisma.libraryTask
@@ -409,7 +413,7 @@ export async function recoverInterruptedTasks(): Promise<void> {
     })
     .catch(() => [])
   for (const task of active) {
-    if (state.types.has(task.type)) continue
+    if (state.tasks.get(task.type) === task.id) continue
     await prisma.libraryTask
       .update({
         where: { id: task.id },
@@ -433,10 +437,10 @@ export async function startLibraryTask(
     orderBy: { createdAt: 'desc' },
   })
   if (existing) return { task: existing, existing: true }
-  if (state.types.has(type)) {
+  if (state.tasks.has(type)) {
     // 内存里标记为运行但数据库没有对应任务，通常是上一次任务收尾的瞬间。
     // 清掉残留标记后继续创建，避免返回一个永远不会执行的幽灵任务。
-    state.types.delete(type)
+    state.tasks.delete(type)
   }
 
   const task = await prisma.libraryTask.create({
@@ -447,7 +451,7 @@ export async function startLibraryTask(
       summary: `${TYPE_LABELS[type]}已排队`,
     },
   })
-  state.types.add(type)
+  state.tasks.set(type, task.id)
   void runTask(task.id, type, options)
   return { task, existing: false }
 }

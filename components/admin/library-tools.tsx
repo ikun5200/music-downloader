@@ -141,10 +141,11 @@ function statusLabel(status: string): string {
   return status
 }
 
-function workflowTone(status: string): 'neutral' | 'green' | 'red' | 'amber' {
+function workflowTone(status: string): 'neutral' | 'violet' | 'green' | 'red' | 'amber' {
   if (status === 'fixed') return 'green'
   if (status === 'failed') return 'red'
   if (status === 'not_found') return 'amber'
+  if (status === 'pending') return 'violet'
   return 'neutral'
 }
 
@@ -152,7 +153,8 @@ function workflowLabel(status: string): string {
   if (status === 'fixed') return '已修复'
   if (status === 'failed') return '失败'
   if (status === 'not_found') return '未找到'
-  if (status === 'skipped') return '待修复'
+  if (status === 'skipped') return '跳过'
+  if (status === 'pending') return '待修复'
   return status
 }
 
@@ -374,7 +376,28 @@ function DuplicatePanel({
   const result = parseResult<DuplicateResult>(task)
   const [busy, setBusy] = useState(false)
   if (!result) return <EmptyState text="还没有重复检测结果。扫描会同时比对文件内容指纹和歌曲信息。" />
-  if (!result.groups.length) return <EmptyState text="没有发现重复文件。" />
+  if (!result.groups.length) {
+    const sameNameCopies = result.summary.sameNameCopies || 0
+    return (
+      <div className="mt-4 space-y-2">
+        <EmptyState text="没有发现重复文件。" />
+        {sameNameCopies ? (
+          <div className="rounded-xl border border-amber-400/15 bg-amber-500/[0.04] px-3 py-2.5 text-[10.5px] leading-5 text-white/40">
+            检测到 {sameNameCopies} 个带 (2)/(3) 的文件名，但歌手、版本或时长不同，未判定为重复（同名不同歌曲）。
+            {result.summary.sameNameExamples?.length ? (
+              <div className="mt-1 space-y-0.5 font-mono text-[9.5px] text-white/25">
+                {result.summary.sameNameExamples.map((path) => (
+                  <div key={path} className="truncate">
+                    {path}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
   const allPaths = result.groups.flatMap((group) => group.remove.map((file) => file.path))
   return (
     <div className="mt-4 space-y-3">
@@ -692,7 +715,14 @@ function WorkflowPanel({
   const retryable = result.items
     .filter((item) => item.status === 'not_found' || item.status === 'failed')
     .map((item) => item.path)
-  const pending = result.items.filter((item) => item.status === 'skipped').map((item) => item.path)
+  // 兼容旧结果：旧版本把“扫描后待修复”也记成 skipped。
+  const pending = result.items
+    .filter(
+      (item) =>
+        item.status === 'pending' ||
+        (item.status === 'skipped' && item.note.startsWith('待修复'))
+    )
+    .map((item) => item.path)
   const allPending = [...new Set([...pending, ...retryable])]
 
   async function apply(paths?: string[]) {

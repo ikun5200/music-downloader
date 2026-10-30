@@ -109,7 +109,14 @@ export interface DuplicateGroup {
 }
 
 export interface DuplicateResult {
-  summary: LibraryTaskSummary & { groups: number; removableFiles: number; removableBytes: number }
+  summary: LibraryTaskSummary & {
+    groups: number
+    removableFiles: number
+    removableBytes: number
+    /** 文件名带 (2)/(3) 等副本后缀，但歌手/版本/时长不同，不能当重复的文件数。 */
+    sameNameCopies?: number
+    sameNameExamples?: string[]
+  }
   groups: DuplicateGroup[]
 }
 
@@ -139,7 +146,7 @@ export interface AlbumResult {
   groups: AlbumMergeGroup[]
 }
 
-export type WorkflowStatus = 'fixed' | 'not_found' | 'skipped' | 'failed'
+export type WorkflowStatus = 'fixed' | 'not_found' | 'skipped' | 'failed' | 'pending'
 
 export interface LyricsWorkflowItem {
   path: string

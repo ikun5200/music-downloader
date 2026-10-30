@@ -179,6 +179,16 @@ describe('duplicate detection', () => {
     expect(result.groups).toHaveLength(1)
   })
 
+  it('reports same-name files that are different songs without grouping them', () => {
+    const files = [
+      file({ path: 'Hey Jude.flac', title: 'Hey Jude', artist: '孙燕姿', duration: 277, quickHash: 'a' }),
+      file({ path: 'Hey Jude (2).flac', title: 'Hey Jude', artist: 'The Beatles', duration: 431, quickHash: 'b' }),
+    ]
+    const result = findDuplicates(files)
+    expect(result.groups).toHaveLength(0)
+    expect(result.summary.sameNameCopies).toBe(1)
+  })
+
   it('groups same song at different quality', () => {
     const files = [
       file({ path: '演员.flac', title: '演员', artist: '薛之谦', quality: 'flac', codec: 'flac', quickHash: 'a' }),
