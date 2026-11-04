@@ -266,6 +266,41 @@ function normalizeTimestampPrefix(raw: string): string | null {
  * - 保留真正歌词的时间轴和空行；
  * - 可选地把中文歌词转成简体。
  */
+const TRANSLATION_TIMESTAMP_RE =
+  /^(\s*(?:\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\])+)\s*(.*)$/
+
+/**
+ * 把网易云/QQ 返回的翻译歌词合并成双语 LRC：
+ * 原文行后面紧跟同时间轴的翻译行，不改变原有时间轴。
+ * 翻译缺失、没有时间轴或与原文相同则原样返回原文。
+ */
+export function mergeTranslatedLyrics(original: string, translation: string): string {
+  const source = String(original || '').replace(/\r\n?/g, '\n').trim()
+  const translated = String(translation || '').replace(/\r\n?/g, '\n').trim()
+  if (!source || !translated) return source
+
+  const translations = new Map<string, string>()
+  for (const line of translated.split('\n')) {
+    const match = line.match(TRANSLATION_TIMESTAMP_RE)
+    if (!match || !match[2].trim()) continue
+    translations.set(match[1].replace(/\s/g, ''), match[2].trim())
+  }
+  if (!translations.size) return source
+
+  const out: string[] = []
+  for (const line of source.split('\n')) {
+    out.push(line)
+    const match = line.match(TRANSLATION_TIMESTAMP_RE)
+    if (!match) continue
+    const key = match[1].replace(/\s/g, '')
+    const text = translations.get(key)
+    const originalText = match[2].trim()
+    if (!text || !originalText || text === originalText) continue
+    out.push(`${match[1]}${text}`)
+  }
+  return out.join('\n')
+}
+
 export function cleanLyrics(
   raw: string,
   options: CleanLyricsOptions = {}

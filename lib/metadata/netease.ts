@@ -1,5 +1,6 @@
 import { fetchJson } from './http'
 import { cleanPromoSuffix, toSimplified } from './normalize'
+import { mergeTranslatedLyrics } from './lyrics'
 import type { MetadataCandidate, MetadataQuery, MetadataSourceResult } from './types'
 
 const CLOUD_SEARCH_URL = 'https://music.163.com/api/cloudsearch/pc'
@@ -61,6 +62,8 @@ interface NeteaseLyricResponse {
   code?: number
   message?: string
   lrc?: { lyric?: string }
+  tlyric?: { lyric?: string }
+  romalrc?: { lyric?: string }
 }
 
 let blockedUntil = 0
@@ -229,7 +232,10 @@ export async function fetchNeteaseLyrics(songId: string): Promise<string> {
       `${LYRIC_URL}?id=${encodeURIComponent(songId)}&lv=-1&kv=-1&tv=-1`,
       { headers: { Referer: 'https://music.163.com/' }, timeoutMs: 15_000, retries: 0 }
     )
-    return String(data.lrc?.lyric || '').trim()
+    return mergeTranslatedLyrics(
+      String(data.lrc?.lyric || '').trim(),
+      String(data.tlyric?.lyric || '').trim()
+    )
   } catch {
     return ''
   }

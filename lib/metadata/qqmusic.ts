@@ -1,5 +1,6 @@
 import { fetchJson, fetchText } from './http'
 import { cleanPromoSuffix, toSimplified } from './normalize'
+import { mergeTranslatedLyrics } from './lyrics'
 import type { MetadataCandidate, MetadataQuery } from './types'
 
 const QQ_HOSTS = ['https://c.y.qq.com', 'https://c6.y.qq.com', 'https://i.y.qq.com']
@@ -49,6 +50,7 @@ interface QqAlbumResponse {
 
 interface QqLyricResponse {
   lyric?: string
+  trans?: string
 }
 
 const QQ_VERSION_SUFFIX_RE =
@@ -261,7 +263,12 @@ export async function fetchQqLyrics(songId: string): Promise<string> {
       { headers: { Referer: QQ_REFERER }, timeoutMs: 15_000, retries: 0 }
     )
     const lyric = (data.lyric || '').trim()
-    if (lyric) return decodeHtmlEntities(lyric)
+    if (lyric) {
+      return mergeTranslatedLyrics(
+        decodeHtmlEntities(lyric),
+        decodeHtmlEntities(String(data.trans || '').trim())
+      )
+    }
   } catch {
     // 尝试旧接口
   }
@@ -276,7 +283,12 @@ export async function fetchQqLyrics(songId: string): Promise<string> {
     if (start >= 0 && end > start) {
       const data = JSON.parse(raw.slice(start + 1, end)) as QqLyricResponse
       const lyric = (data.lyric || '').trim()
-      if (lyric) return decodeHtmlEntities(lyric)
+      if (lyric) {
+        return mergeTranslatedLyrics(
+          decodeHtmlEntities(lyric),
+          decodeHtmlEntities(String(data.trans || '').trim())
+        )
+      }
     }
   } catch {
     // 无歌词
