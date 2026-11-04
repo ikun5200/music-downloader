@@ -30,6 +30,8 @@ export interface AppSettings {
   lyricsCleanCredits: boolean
   lyricsSimplify: boolean
   lyricsAiCleanEnabled: boolean
+  /** 歌词工作流把外语歌词用 AI 翻译成简体中文。 */
+  lyricsTranslateToChinese: boolean
   metadataAiEnabled: boolean
   /** 是否用 AI 判断 artist 里的 & / , / feat. 是合作分隔还是乐队名的一部分。 */
   metadataArtistAiEnabled: boolean
@@ -83,6 +85,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lyricsCleanCredits: true,
   lyricsSimplify: true,
   lyricsAiCleanEnabled: true,
+  lyricsTranslateToChinese: true,
   metadataAiEnabled: true,
   metadataArtistAiEnabled: true,
   aiVersionGuardEnabled: true,
@@ -200,6 +203,7 @@ function parseSettings(rows: { key: string; value: string }[]): AppSettings {
     lyricsCleanCredits: (pick('lyricsCleanCredits') ?? 'true') !== 'false',
     lyricsSimplify: (pick('lyricsSimplify') ?? 'true') !== 'false',
     lyricsAiCleanEnabled: (pick('lyricsAiCleanEnabled') ?? 'true') !== 'false',
+    lyricsTranslateToChinese: (pick('lyricsTranslateToChinese') ?? 'true') !== 'false',
     metadataAiEnabled: (pick('metadataAiEnabled') ?? 'true') !== 'false',
     metadataArtistAiEnabled: (pick('metadataArtistAiEnabled') ?? 'true') !== 'false',
     aiVersionGuardEnabled: (pick('aiVersionGuardEnabled') ?? 'true') !== 'false',
@@ -304,6 +308,9 @@ export async function setSettings(values: SettingsPatch) {
   }
   if (values.lyricsAiCleanEnabled != null) {
     entries.push(['lyricsAiCleanEnabled', String(values.lyricsAiCleanEnabled)])
+  }
+  if (values.lyricsTranslateToChinese != null) {
+    entries.push(['lyricsTranslateToChinese', String(values.lyricsTranslateToChinese)])
   }
   if (values.metadataAiEnabled != null) {
     entries.push(['metadataAiEnabled', String(values.metadataAiEnabled)])

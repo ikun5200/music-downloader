@@ -87,6 +87,9 @@ export function SettingsForm({
   const [lyricsCleanCredits, setLyricsCleanCredits] = useState(initial.lyricsCleanCredits)
   const [lyricsSimplify, setLyricsSimplify] = useState(initial.lyricsSimplify)
   const [lyricsAiCleanEnabled, setLyricsAiCleanEnabled] = useState(initial.lyricsAiCleanEnabled)
+  const [lyricsTranslateToChinese, setLyricsTranslateToChinese] = useState(
+    initial.lyricsTranslateToChinese
+  )
   const [metadataAiEnabled, setMetadataAiEnabled] = useState(initial.metadataAiEnabled)
   const [metadataArtistAiEnabled, setMetadataArtistAiEnabled] = useState(
     initial.metadataArtistAiEnabled
@@ -175,6 +178,7 @@ export function SettingsForm({
           lyricsCleanCredits,
           lyricsSimplify,
           lyricsAiCleanEnabled,
+          lyricsTranslateToChinese,
           metadataAiEnabled,
           metadataArtistAiEnabled,
           aiVersionGuardEnabled: aiVersionGuard,
@@ -670,6 +674,20 @@ export function SettingsForm({
                 onChange={setLyricsAiCleanEnabled}
                 disabled={!aiReady}
                 label="AI 识别歌词前缀/制作信息"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-[11px] text-white/55">AI 翻译外语歌词</div>
+                <div className="mt-0.5 text-[10px] leading-4 text-white/25">
+                  歌词工作流把英文、日文、韩文等歌词翻译成简体中文，并以双语 LRC 写入；已有中文或已有网易云翻译的歌词不会重复翻译。AI 不可用时保留原文。
+                </div>
+              </div>
+              <Switch
+                checked={lyricsTranslateToChinese}
+                onChange={setLyricsTranslateToChinese}
+                disabled={!aiReady}
+                label="AI 翻译外语歌词"
               />
             </div>
             <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-black/15 px-3 py-2">

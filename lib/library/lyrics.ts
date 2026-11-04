@@ -2,6 +2,10 @@ import type { AiConfig, AppSettings } from '../settings'
 import { getMetadataAdapter } from '../metadata/sources'
 import { isSyncedLyrics, scoreCandidate, toSimplified } from '../metadata/normalize'
 import { cleanLyricsWithAi } from '../metadata/lyrics-ai'
+import {
+  shouldTranslateLyricsToChinese,
+  translateLyricsToChinese,
+} from '../metadata/lyrics-translate'
 import { writeLyricsOnly } from '../metadata/tag'
 import { detectCandidateVersionTags } from '../version-intent'
 import type { MetadataCandidate, MetadataSourceId } from '../metadata/types'
@@ -152,6 +156,10 @@ export interface ApplyLyricsResult {
   preview?: string
 }
 
+export function needsChineseTranslation(file: LibraryFile): boolean {
+  return file.hasLyrics && file.syncedLyrics && shouldTranslateLyricsToChinese(file.lyrics)
+}
+
 export async function applyLyricsToFile(
   root: string,
   file: LibraryFile,
@@ -161,10 +169,33 @@ export async function applyLyricsToFile(
   if (!file.title || !file.artist) {
     return { status: 'skipped', note: '缺少歌名或歌手，无法搜索歌词' }
   }
-  const fetched = await fetchBestLyrics(file, settings).catch(() => null)
-  if (!fetched) return { status: 'not_found', note: '所有歌词源都没有找到可信匹配' }
 
-  const cleaned = await cleanLyricsWithAi(fetched.lyrics, {
+  const translationNeeded =
+    settings.lyricsTranslateToChinese && needsChineseTranslation(file)
+  // 已有可用的外语歌词时只做翻译，不重新抓取，避免换掉原本正确的时间轴。
+  const canUseExisting =
+    translationNeeded &&
+    file.syncedLyrics &&
+    !lyricsIssueCodes(file).some((code) => code !== 'lyrics_traditional')
+
+  let rawLyrics = ''
+  let source = ''
+  let sourceNote = ''
+  let fetched = false
+  if (canUseExisting) {
+    rawLyrics = file.lyrics
+    source = '文件已有歌词'
+    sourceNote = '翻译已有歌词'
+  } else {
+    const result = await fetchBestLyrics(file, settings).catch(() => null)
+    if (!result) return { status: 'not_found', note: '所有歌词源都没有找到可信匹配' }
+    rawLyrics = result.lyrics
+    source = result.source
+    sourceNote = result.note
+    fetched = true
+  }
+
+  const cleaned = await cleanLyricsWithAi(rawLyrics, {
     title: file.title,
     artist: file.artist,
     cleanCredits: settings.lyricsCleanCredits,
@@ -173,26 +204,50 @@ export async function applyLyricsToFile(
     aiEnabled: settings.lyricsAiCleanEnabled,
   })
   const usable = lyricsLookUsable(cleaned.text, file.duration)
-  if (!usable.ok) return { status: 'failed', source: fetched.source, note: usable.note }
+  if (!usable.ok) return { status: 'failed', source, note: usable.note }
 
-  const write = await writeLyricsOnly(file.absolute, cleaned.text)
+  let finalText = cleaned.text
+  let translationNote = ''
+  if (settings.lyricsTranslateToChinese) {
+    const translated = await translateLyricsToChinese(finalText, {
+      title: file.title,
+      artist: file.artist,
+      aiConfig,
+      aiEnabled: settings.lyricsTranslateToChinese,
+    })
+    if (translated.translatedLines > 0) {
+      finalText = translated.text
+      translationNote = translated.note
+    } else if (!fetched && translationNeeded) {
+      return { status: 'failed', source, note: `翻译失败：${translated.note}` }
+    } else if (translationNeeded) {
+      translationNote = `未翻译：${translated.note}`
+    }
+  }
+
+  const write = await writeLyricsOnly(file.absolute, finalText)
   if (!write.ok) {
-    return { status: 'failed', source: fetched.source, note: write.note || '写入歌词失败' }
+    return { status: 'failed', source, note: write.note || '写入歌词失败' }
   }
 
   const verified = await inspectLibraryFile(root, file.absolute, false)
   if (!verified.hasLyrics) {
-    return { status: 'failed', source: fetched.source, note: '写入后校验不到歌词标签' }
+    return { status: 'failed', source, note: '写入后校验不到歌词标签' }
   }
 
-  const preview = meaningfulLines(cleaned.text)
+  const preview = meaningfulLines(finalText)
     .slice(0, 2)
     .join(' / ')
     .slice(0, 160)
   return {
     status: 'fixed',
-    source: fetched.source,
-    note: [fetched.note, cleaned.aiUsed ? 'AI 清理前缀' : '', `写入 ${write.wrote.join('、')}`]
+    source,
+    note: [
+      sourceNote,
+      cleaned.aiUsed ? 'AI 清理前缀' : '',
+      translationNote,
+      `写入 ${write.wrote.join('、')}`,
+    ]
       .filter(Boolean)
       .join('；'),
     preview,

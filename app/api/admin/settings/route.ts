@@ -38,6 +38,7 @@ const schema = z.object({
   lyricsCleanCredits: z.boolean().optional(),
   lyricsSimplify: z.boolean().optional(),
   lyricsAiCleanEnabled: z.boolean().optional(),
+  lyricsTranslateToChinese: z.boolean().optional(),
   metadataAiEnabled: z.boolean().optional(),
   metadataArtistAiEnabled: z.boolean().optional(),
   aiVersionGuardEnabled: z.boolean().optional(),

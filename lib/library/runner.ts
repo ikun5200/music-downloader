@@ -6,7 +6,12 @@ import { inspectLibraryFile, mapLimit, scanLibrary } from './scan'
 import { auditLibrary, lyricsHasHeader } from './audit'
 import { findDuplicates } from './duplicates'
 import { findAlbumMerges } from './albums'
-import { applyLyricsToFile, lyricsIssueCodes, toLyricsItem } from './lyrics'
+import {
+  applyLyricsToFile,
+  lyricsIssueCodes,
+  needsChineseTranslation,
+  toLyricsItem,
+} from './lyrics'
 import { applyCoverToFile, toCoverItem } from './covers'
 import { resolveLibraryPath } from './actions'
 import type {
@@ -54,13 +59,14 @@ function isInstrumental(file: LibraryFile): boolean {
   )
 }
 
-function lyricsTargets(files: LibraryFile[]): LibraryFile[] {
+function lyricsTargets(files: LibraryFile[], settings: Awaited<ReturnType<typeof getSettings>>): LibraryFile[] {
   return files.filter((file) => {
     if (isInstrumental(file)) return false
     if (!file.hasLyrics) return true
     const codes = lyricsIssueCodes(file)
     if (codes.length) return true
-    return lyricsHasHeader(file.lyrics)
+    if (lyricsHasHeader(file.lyrics)) return true
+    return settings.lyricsTranslateToChinese && needsChineseTranslation(file)
   })
 }
 
@@ -73,13 +79,20 @@ function coverTargets(files: LibraryFile[]): LibraryFile[] {
   )
 }
 
-function lyricsTargetNote(file: LibraryFile): string {
+function lyricsTargetNote(file: LibraryFile, settings: Awaited<ReturnType<typeof getSettings>>): string {
   const notes: string[] = []
   if (!file.hasLyrics) notes.push('没有歌词')
   if (file.hasLyrics && lyricsIssueCodes(file).includes('lyrics_mojibake')) notes.push('歌词乱码')
   if (file.hasLyrics && !file.syncedLyrics) notes.push('歌词无时间轴')
   if (file.hasLyrics && lyricsIssueCodes(file).includes('lyrics_traditional')) notes.push('歌词为繁体')
   if (file.hasLyrics && lyricsHasHeader(file.lyrics)) notes.push('歌词开头有制作信息')
+  if (
+    settings.lyricsTranslateToChinese &&
+    needsChineseTranslation(file) &&
+    !notes.length
+  ) {
+    notes.push('外语歌词待翻译')
+  }
   return notes.join('、') || '待处理'
 }
 
@@ -232,7 +245,7 @@ async function runTask(
     }
 
     const pathFilter = requestedPaths ? new Set(requestedPaths) : null
-    const targets = (type === 'lyrics' ? lyricsTargets(files) : coverTargets(files)).filter(
+    const targets = (type === 'lyrics' ? lyricsTargets(files, settings) : coverTargets(files)).filter(
       (file) => !pathFilter || pathFilter.has(file.path)
     )
     const total = requestedPaths ? targets.length : files.length + (options.apply ? targets.length : 0)
@@ -247,7 +260,7 @@ async function runTask(
                 artist: file.artist,
                 album: file.album,
                 status: 'pending',
-                note: `待修复：${lyricsTargetNote(file)}`,
+                note: `待修复：${lyricsTargetNote(file, settings)}`,
               }
             : {
                 path: file.path,
