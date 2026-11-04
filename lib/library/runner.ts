@@ -9,8 +9,8 @@ import { findAlbumMerges } from './albums'
 import {
   applyLyricsToFile,
   lyricsIssueCodes,
+  needsBilingualLrc,
   needsChineseTranslation,
-  needsFeiniuTtml,
   toLyricsItem,
 } from './lyrics'
 import { applyCoverToFile, toCoverItem } from './covers'
@@ -67,7 +67,7 @@ function lyricsTargets(files: LibraryFile[], settings: Awaited<ReturnType<typeof
     const codes = lyricsIssueCodes(file)
     if (codes.length) return true
     if (lyricsHasHeader(file.lyrics)) return true
-    if (needsFeiniuTtml(file)) return true
+    if (needsBilingualLrc(file)) return true
     return settings.lyricsTranslateToChinese && needsChineseTranslation(file)
   })
 }
@@ -88,8 +88,8 @@ function lyricsTargetNote(file: LibraryFile, settings: Awaited<ReturnType<typeof
   if (file.hasLyrics && !file.syncedLyrics) notes.push('歌词无时间轴')
   if (file.hasLyrics && lyricsIssueCodes(file).includes('lyrics_traditional')) notes.push('歌词为繁体')
   if (file.hasLyrics && lyricsHasHeader(file.lyrics)) notes.push('歌词开头有制作信息')
-  if (needsFeiniuTtml(file) && !notes.length) {
-    notes.push('双语歌词待转换为飞牛格式')
+  if (needsBilingualLrc(file) && !notes.length) {
+    notes.push('TTML 歌词待还原为双语 LRC')
   } else if (
     settings.lyricsTranslateToChinese &&
     needsChineseTranslation(file) &&

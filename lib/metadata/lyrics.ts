@@ -268,87 +268,96 @@ function normalizeTimestampPrefix(raw: string): string | null {
  */
 const TTML_ROOT_RE = /<tt(?:\s|>)/i
 const TTML_P_RE = /<p(?:\s|>)/i
-const LRC_LINE_RE = /^\s*(?:\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\])+\s*(.*)$/
 
 export function isTtmlLyrics(text: string | null | undefined): boolean {
   const value = String(text || '')
   return TTML_ROOT_RE.test(value) && TTML_P_RE.test(value)
 }
 
-function ttmlEscape(value: string): string {
+function decodeTtmlEntities(value: string): string {
   return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
 }
 
-function formatTtmlTime(ms: number): string {
-  const totalSeconds = Math.max(0, ms) / 1000
+function ttmlTimeToMs(value: string): number | null {
+  const text = String(value || '').trim()
+  const hms = text.match(/^(\d{1,2}):(\d{2}):(\d{2}(?:[.,]\d+)?)$/)
+  if (hms) {
+    return (
+      Number(hms[1]) * 3_600_000 +
+      Number(hms[2]) * 60_000 +
+      Math.round(Number(hms[3].replace(',', '.')) * 1000)
+    )
+  }
+  const ms = text.match(/^(\d{1,3}):(\d{2}(?:[.,]\d+)?)$/)
+  if (ms) {
+    return Number(ms[1]) * 60_000 + Math.round(Number(ms[2].replace(',', '.')) * 1000)
+  }
+  const seconds = text.match(/^(\d+(?:[.,]\d+)?)s?$/)
+  if (seconds) return Math.round(Number(seconds[1].replace(',', '.')) * 1000)
+  return null
+}
+
+function formatLrcTime(ms: number): string {
+  const total = Math.max(0, Math.round(ms))
+  const totalSeconds = Math.floor(total / 1000)
   const minutes = Math.floor(totalSeconds / 60)
-  const seconds = Math.floor(totalSeconds % 60)
-  const millis = Math.round((totalSeconds - Math.floor(totalSeconds)) * 1000)
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`
+  const seconds = totalSeconds % 60
+  const millis = total % 1000
+  return `[${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(
+    millis
+  ).padStart(3, '0')}]`
 }
 
-interface TtmlEntry {
-  ms: number
-  text: string
-  translation: string
+function ttmlParagraphText(html: string): string {
+  return decodeTtmlEntities(
+    html
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/<[^>]+>/g, '')
+  )
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 /**
- * 飞牛音乐原生按时间戳只保存一行歌词，普通双语 LRC 的
- * `[00:20.38]原文` + `[00:20.38]翻译` 会在导入时丢掉翻译。
- * 飞牛前端支持 Apple Music 风格 TTML，x-translation 会作为独立翻译显示。
- * 只有存在“同一时间戳两行”的双语歌词时才转换，普通 LRC 原样保留。
+ * 把 TTML 还原成双语 LRC。
+ * 飞牛前端并不渲染 TTML 的 x-translation，只按行显示 text；
+ * 双语 LRC 的“原文行 + 同时间戳翻译行”才能让翻译真正出现在界面上。
+ * 没有 x-translation 的 TTML 返回 null，避免破坏普通 TTML 歌词。
  */
-export function toTtmlLyrics(lyrics: string): string | null {
-  const text = String(lyrics || '').replace(/\r\n?/g, '\n').trim()
-  if (!text || isTtmlLyrics(text)) return null
-  const entries: TtmlEntry[] = []
-  for (const line of text.split('\n')) {
-    const match = line.match(LRC_LINE_RE)
-    if (!match || !match[4].trim()) continue
-    if (/^\[(?:ti|ar|al|by|offset|re|ve|length|kuwo|kugou|qq|music):/i.test(line.trim())) {
-      continue
-    }
-    const minutes = Number(match[1])
-    const seconds = Number(match[2])
-    const fraction = match[3] || ''
-    const ms =
-      minutes * 60_000 +
-      seconds * 1000 +
-      Number(fraction.padEnd(3, '0').slice(0, 3))
-    const value = match[4].trim()
-    const previous = entries[entries.length - 1]
-    if (previous && previous.ms === ms) {
-      previous.translation = previous.translation
-        ? `${previous.translation} ${value}`
-        : value
-    } else {
-      entries.push({ ms, text: value, translation: '' })
+export function fromTtmlLyrics(lyrics: string): string | null {
+  const text = String(lyrics || '').trim()
+  if (!isTtmlLyrics(text)) return null
+  const lines: string[] = []
+  let hasTranslation = false
+  const paragraphs = text.matchAll(/<p\b([^>]*)>([\s\S]*?)<\/p>/gi)
+  for (const paragraph of paragraphs) {
+    const attrs = paragraph[1] || ''
+    const begin = attrs.match(/\bbegin\s*=\s*["']([^"']+)["']/i)?.[1]
+    const ms = begin ? ttmlTimeToMs(begin) : null
+    if (ms == null) continue
+    const inner = paragraph[2] || ''
+    const translationMatch = inner.match(
+      /<span\b[^>]*\brole\s*=\s*["']x-translation["'][^>]*>([\s\S]*?)<\/span>/i
+    )
+    const translation = translationMatch ? ttmlParagraphText(translationMatch[1]) : ''
+    const original = ttmlParagraphText(
+      translationMatch ? inner.replace(translationMatch[0], '') : inner
+    )
+    if (!original && !translation) continue
+    if (original) lines.push(`${formatLrcTime(ms)}${original}`)
+    if (translation && translation !== original) {
+      hasTranslation = true
+      lines.push(`${formatLrcTime(ms)}${translation}`)
     }
   }
-  if (!entries.some((entry) => entry.translation.trim())) return null
-  entries.sort((a, b) => a.ms - b.ms)
-
-  const paragraphs = entries.map((entry, index) => {
-    const end = entries[index + 1]?.ms ?? entry.ms + 5000
-    const translation = entry.translation.trim()
-    const body = `${ttmlEscape(entry.text)}${
-      translation
-        ? `<span role="x-translation">${ttmlEscape(translation)}</span>`
-        : ''
-    }`
-    return `  <p begin="${formatTtmlTime(entry.ms)}" end="${formatTtmlTime(end)}">${body}</p>`
-  })
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<tt xmlns="http://www.w3.org/ns/ttml"><body><div>',
-    ...paragraphs,
-    '</div></body></tt>',
-  ].join('\n')
+  return hasTranslation && lines.length ? lines.join('\n') : null
 }
 
 const TRANSLATION_TIMESTAMP_RE =

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isTtmlLyrics, mergeTranslatedLyrics, toTtmlLyrics } from '../lib/metadata/lyrics'
+import { fromTtmlLyrics, isTtmlLyrics, mergeTranslatedLyrics } from '../lib/metadata/lyrics'
 
 describe('translated lyrics merge', () => {
   it('adds translation lines after matching timestamps', () => {
@@ -22,24 +22,30 @@ describe('translated lyrics merge', () => {
   })
 })
 
-describe('Feiniu TTML lyrics', () => {
-  it('converts bilingual LRC into TTML with x-translation', () => {
-    const lrc = '[00:01.00]Hello world\n[00:01.00]你好世界\n[00:03.50]Goodbye'
-    const ttml = toTtmlLyrics(lrc)
-    expect(ttml).toContain('<tt xmlns=')
-    expect(ttml).toContain('<p begin="00:01.000"')
-    expect(ttml).toContain('role="x-translation">你好世界')
-    expect(ttml).toContain('Goodbye')
-    expect(isTtmlLyrics(ttml || '')).toBe(true)
+describe('Feiniu bilingual lyrics', () => {
+  const ttml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<tt xmlns="http://www.w3.org/ns/ttml"><body><div>',
+    '  <p begin="00:01.000" end="00:03.500">Hello world<span role="x-translation">你好世界</span></p>',
+    '  <p begin="00:03.500" end="00:05.000">Goodbye</p>',
+    '</div></body></tt>',
+  ].join('\n')
+
+  it('restores bilingual LRC from TTML x-translation', () => {
+    expect(isTtmlLyrics(ttml)).toBe(true)
+    expect(fromTtmlLyrics(ttml)).toBe(
+      '[00:01.000]Hello world\n[00:01.000]你好世界\n[00:03.500]Goodbye'
+    )
   })
 
-  it('leaves ordinary LRC untouched when there is no translation', () => {
-    expect(toTtmlLyrics('[00:01.00]Hello world\n[00:03.00]Goodbye')).toBeNull()
+  it('leaves ordinary TTML untouched when there is no translation', () => {
+    const plain = '<tt><body><div><p begin="00:01.000">Hello</p></div></body></tt>'
+    expect(fromTtmlLyrics(plain)).toBeNull()
   })
 
-  it('escapes XML special characters', () => {
-    const ttml = toTtmlLyrics('[00:01.00]A & B\n[00:01.00]甲 & 乙')
-    expect(ttml).toContain('A &amp; B')
-    expect(ttml).toContain('甲 &amp; 乙')
+  it('decodes XML entities when restoring', () => {
+    const escaped =
+      '<tt><body><div><p begin="00:01.000">A &amp; B<span role="x-translation">甲 &amp; 乙</span></p></div></body></tt>'
+    expect(fromTtmlLyrics(escaped)).toBe('[00:01.000]A & B\n[00:01.000]甲 & 乙')
   })
 })

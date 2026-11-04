@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { fetchImage } from './http'
 import { isPlaceholderCover } from './cover'
-import { cleanLyrics, toTtmlLyrics } from './lyrics'
+import { cleanLyrics, fromTtmlLyrics, isTtmlLyrics } from './lyrics'
 import type { MetadataCandidate, MetadataWriteResult } from './types'
 import { normalizeArtists } from '../artists'
 
@@ -118,9 +118,10 @@ function buildMetadataArgs(
           simplify: options.lyricsSimplify,
         })
       : ''
-    // 飞牛音乐导入普通双语 LRC 时会按时间戳去重，翻译行会丢失。
-    // 有翻译时写 Apple Music 风格 TTML，飞牛会单独显示 x-translation。
-    const lyrics = cleaned ? toTtmlLyrics(cleaned) || cleaned : ''
+    // 飞牛前端只按行显示歌词文本，不渲染 TTML 的 x-translation；
+    // 因此保留“原文行 + 同时间戳翻译行”的双语 LRC。
+    const converted = cleaned && isTtmlLyrics(cleaned) ? fromTtmlLyrics(cleaned) : null
+    const lyrics = converted || cleaned || ''
     if (lyrics) args.push('-metadata', `lyrics=${lyrics}`)
   }
   return args
@@ -443,6 +444,10 @@ export async function writeLyricsOnly(
     `.${path.basename(filePath, path.extname(filePath))}.lyrics-${Date.now()}-${process.pid}${path.extname(filePath)}`
   )
   try {
+    const rawLyrics = String(lyrics || '').trim()
+    const lyricsText = isTtmlLyrics(rawLyrics)
+      ? fromTtmlLyrics(rawLyrics) || rawLyrics
+      : rawLyrics
     const args = [
       '-y',
       '-nostdin',
@@ -458,9 +463,7 @@ export async function writeLyricsOnly(
       '-c',
       'copy',
       '-metadata',
-      `lyrics=${
-        toTtmlLyrics(String(lyrics || '')) || String(lyrics || '').trim()
-      }`,
+      `lyrics=${lyricsText}`,
     ]
     if (ext === 'mp3') args.push('-id3v2_version', '3')
     args.push(output)

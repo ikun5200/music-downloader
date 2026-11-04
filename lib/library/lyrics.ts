@@ -2,7 +2,7 @@ import type { AiConfig, AppSettings } from '../settings'
 import { getMetadataAdapter } from '../metadata/sources'
 import { isSyncedLyrics, scoreCandidate, toSimplified } from '../metadata/normalize'
 import { cleanLyricsWithAi } from '../metadata/lyrics-ai'
-import { isTtmlLyrics, toTtmlLyrics } from '../metadata/lyrics'
+import { fromTtmlLyrics, isTtmlLyrics } from '../metadata/lyrics'
 import {
   shouldTranslateLyricsToChinese,
   translateLyricsToChinese,
@@ -167,11 +167,11 @@ export function needsChineseTranslation(file: LibraryFile): boolean {
   )
 }
 
-export function needsFeiniuTtml(file: LibraryFile): boolean {
+export function needsBilingualLrc(file: LibraryFile): boolean {
   return (
     file.hasLyrics &&
-    !isTtmlLyrics(file.lyrics) &&
-    !!toTtmlLyrics(file.lyrics)
+    isTtmlLyrics(file.lyrics) &&
+    !!fromTtmlLyrics(file.lyrics)
   )
 }
 
@@ -185,26 +185,25 @@ export async function applyLyricsToFile(
     return { status: 'skipped', note: '缺少歌名或歌手，无法搜索歌词' }
   }
 
-  const translationNeeded =
-    settings.lyricsTranslateToChinese && needsChineseTranslation(file)
-  // 已有双语 LRC 时只转换成飞牛能识别的 TTML，不重新抓取。
-  if (
-    needsFeiniuTtml(file) &&
-    !translationNeeded &&
-    file.syncedLyrics &&
-    !lyricsIssueCodes(file).length
-  ) {
-    const write = await writeLyricsOnly(file.absolute, file.lyrics)
+  // 旧版本写入的 TTML 翻译在飞牛界面不显示，这里还原成双语 LRC，不重新抓取。
+  if (needsBilingualLrc(file)) {
+    const restored = fromTtmlLyrics(file.lyrics)
+    if (!restored) {
+      return { status: 'failed', source: '文件已有歌词', note: 'TTML 歌词里没有可还原的翻译' }
+    }
+    const write = await writeLyricsOnly(file.absolute, restored)
     if (!write.ok) {
       return { status: 'failed', source: '文件已有歌词', note: write.note || '写入歌词失败' }
     }
     return {
       status: 'fixed',
       source: '文件已有歌词',
-      note: '转换为飞牛翻译格式（TTML）',
-      preview: meaningfulLines(file.lyrics).slice(0, 2).join(' / ').slice(0, 160),
+      note: '转换为飞牛双语格式（LRC）',
+      preview: meaningfulLines(restored).slice(0, 4).join(' / ').slice(0, 160),
     }
   }
+  const translationNeeded =
+    settings.lyricsTranslateToChinese && needsChineseTranslation(file)
   // 已有可用的外语歌词时只做翻译，不重新抓取，避免换掉原本正确的时间轴。
   const canUseExisting =
     translationNeeded &&
