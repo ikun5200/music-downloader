@@ -458,7 +458,9 @@ export async function writeLyricsOnly(
       '-c',
       'copy',
       '-metadata',
-      `lyrics=${String(lyrics || '').trim()}`,
+      `lyrics=${
+        toTtmlLyrics(String(lyrics || '')) || String(lyrics || '').trim()
+      }`,
     ]
     if (ext === 'mp3') args.push('-id3v2_version', '3')
     args.push(output)
