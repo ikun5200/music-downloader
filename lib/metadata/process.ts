@@ -8,6 +8,10 @@ import {
 } from '../version-intent'
 import { scrapeMetadata } from './scrape'
 import { cleanLyricsWithAi } from './lyrics-ai'
+import {
+  shouldTranslateLyricsToChinese,
+  translateLyricsToChinese,
+} from './lyrics-translate'
 import { writeMetadataTags } from './tag'
 import { resolveArtists } from '../artists'
 
@@ -125,6 +129,27 @@ export async function processMetadataForJob(
       : null
     if (lyricsResult) candidate.lyrics = lyricsResult.text
 
+    // 新下载的外语歌也直接翻译成中文，和歌词工作流保持同一套规则。
+    let translationNote = ''
+    if (
+      candidate.lyrics &&
+      settings.metadataWriteLyrics &&
+      settings.lyricsTranslateToChinese
+    ) {
+      const translation = await translateLyricsToChinese(candidate.lyrics, {
+        title: candidate.title,
+        artist: candidate.artist,
+        aiConfig,
+        aiEnabled: settings.lyricsTranslateToChinese,
+      })
+      if (translation.translatedLines > 0) {
+        candidate.lyrics = translation.text
+        translationNote = translation.note
+      } else if (shouldTranslateLyricsToChinese(candidate.lyrics)) {
+        translationNote = `未翻译：${translation.note}`
+      }
+    }
+
     const written = await writeMetadataTags(absolutePath, candidate, {
       writeInfo: settings.metadataWriteInfo,
       writeCover: settings.metadataWriteCover,
@@ -137,7 +162,7 @@ export async function processMetadataForJob(
 
     return {
       status: written.ok ? 'success' : written.partial ? 'partial' : 'failed',
-      note: [...artistNotes, result.note, lyricsResult?.note, written.note]
+      note: [...artistNotes, result.note, lyricsResult?.note, translationNote, written.note]
         .filter(Boolean)
         .join('；')
         .slice(0, 1000),
