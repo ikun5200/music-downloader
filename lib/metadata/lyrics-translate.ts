@@ -61,8 +61,9 @@ function lyricGroups(text: string): LyricGroup[] {
       const kana = countMatches(line, KANA_RE)
       const hangul = countMatches(line, HANGUL_RE)
       const cjk = countMatches(line, CJK_RE)
-      // 日文/韩文原文里也常含汉字，不能只凭“有汉字”就当成中文翻译行。
-      if (cjk >= 2 && !kana && !hangul) group.hasChinese = true
+      // 翻译可能只有一个字（如 Yeah → 耶），不能用“至少两个汉字”判断；
+      // 只要没有假名/韩文，单个汉字也算中文翻译行。
+      if (cjk >= 1 && !kana && !hangul) group.hasChinese = true
       if (
         kana > 0 ||
         hangul > 0 ||
@@ -98,7 +99,7 @@ export function analyzeLyricsTranslation(text: string): LyricsTranslationStats {
       total +
       group.lines.filter((line) => {
         const cjk = countMatches(line, CJK_RE)
-        return cjk >= 2 && !countMatches(line, KANA_RE) && !countMatches(line, HANGUL_RE)
+        return cjk >= 1 && !countMatches(line, KANA_RE) && !countMatches(line, HANGUL_RE)
       }).length,
     0
   )

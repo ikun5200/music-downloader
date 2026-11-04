@@ -56,6 +56,14 @@ describe('lyrics translation detection', () => {
     ).toBe(false)
   })
 
+  it('treats one-character Chinese translations as already translated', () => {
+    expect(
+      shouldTranslateLyricsToChinese(
+        '[00:01.00]Yeah\n[00:01.00]耶\n[00:02.00]Oh\n[00:02.00]哦'
+      )
+    ).toBe(false)
+  })
+
   it('detects partially translated foreign lyrics', () => {
     expect(
       shouldTranslateLyricsToChinese(
