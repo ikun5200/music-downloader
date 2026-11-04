@@ -62,7 +62,9 @@ function trackValue(track?: string, total?: string): string | null {
 }
 
 function ffmpegMuxerArgs(ext: string, hasCover: boolean): string[] {
-  if (!hasCover) return ['-map', '0', '-c', 'copy']
+  // 只保留音频和视频（封面），跳过 M4A 里可能的 text/data 字幕流；
+  // 这类流用 -c copy 写回 mp4 容器会报 “Tag text incompatible”。
+  if (!hasCover) return ['-map', '0:a', '-map', '0:v?', '-c', 'copy']
   const args = ['-map', '0:a:0', '-map', '1:v:0', '-c:a', 'copy', '-c:v', 'copy']
   if (ext === 'mp3') {
     args.push(
@@ -394,7 +396,9 @@ export async function writeAlbumOnly(
       '-map_metadata',
       '0',
       '-map',
-      '0',
+      '0:a',
+      '-map',
+      '0:v?',
       '-c',
       'copy',
       '-metadata',
@@ -459,7 +463,9 @@ export async function writeLyricsOnly(
       '-map_metadata',
       '0',
       '-map',
-      '0',
+      '0:a',
+      '-map',
+      '0:v?',
       '-c',
       'copy',
       '-metadata',

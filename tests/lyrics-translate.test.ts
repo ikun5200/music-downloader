@@ -125,6 +125,28 @@ describe('AI lyrics translation', () => {
     expect(result.text.match(/这是一句很长的英文歌词/g)).toHaveLength(1)
   })
 
+  it('splits a failed chunk and retries smaller pieces', async () => {
+    const chat = vi.fn(async (_config: unknown, messages: unknown) => {
+      const payload = JSON.parse(
+        String((messages as Array<{ content?: string }>)[1]?.content || '{}')
+      )
+      const lines = payload.lines as Array<{ i: number; text: string }>
+      if (lines.length > 1) return 'truncated'
+      return JSON.stringify({
+        translations: [{ i: lines[0].i, text: `中文翻译${lines[0].i}` }],
+      })
+    })
+    const source =
+      '[00:01.00]This is the first English lyric line\n[00:02.00]This is the second English lyric line'
+    const result = await translateLyricsToChinese(source, {
+      aiConfig,
+      aiEnabled: true,
+      chat: chat as never,
+    })
+    expect(result.translatedLines).toBe(2)
+    expect(chat.mock.calls.length).toBeGreaterThanOrEqual(3)
+  })
+
   it('keeps the original when AI returns invalid content', async () => {
     const chat = vi.fn(async () => 'not json')
     const source = '[00:01.00]This is a long English lyric line for testing translation'

@@ -224,8 +224,10 @@ async function translateChunk(
     },
   ]
   const reply = await chat(config, messages, {
-    timeoutMs: 35_000,
-    maxTokens: Math.min(2400, Math.max(600, lines.length * 90)),
+    timeoutMs: 45_000,
+    // 推理型模型会先消耗几百个 thinking token，预算必须留足；
+    // 否则短歌词块会返回 finish_reason=length，JSON 直接截断。
+    maxTokens: Math.min(8000, Math.max(2500, lines.length * 200 + 800)),
     feature: '歌词翻译',
   })
   const parsed = extractJsonObject(reply)
@@ -233,10 +235,11 @@ async function translateChunk(
     ? (parsed.translations as TranslationItem[])
     : []
 
+  const allowed = new Set(lines.map((line) => line.i))
   const out = new Map<number, string>()
   for (const item of items) {
     const index = Number(item?.i)
-    if (!Number.isInteger(index)) continue
+    if (!Number.isInteger(index) || !allowed.has(index)) continue
     const text = String(item?.text || '')
       .replace(/\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]/g, '')
       .replace(/\s+/g, ' ')
@@ -247,6 +250,47 @@ async function translateChunk(
     out.set(index, toSimplified(text).slice(0, 500))
   }
   return out
+}
+
+/**
+ * 单块失败（JSON 截断、返回不全）时拆成两半重试。
+ * 保留已经拿到的部分翻译，再递归补齐，避免整首歌因为一个长块直接放弃。
+ */
+async function translateChunkWithFallback(
+  lines: Array<{ i: number; text: string }>,
+  title: string,
+  artist: string,
+  config: AiConfig,
+  chat: typeof chatCompletion
+): Promise<Map<number, string>> {
+  const translations = new Map<number, string>()
+  try {
+    const result = await translateChunk(lines, title, artist, config, chat)
+    for (const [index, text] of result) translations.set(index, text)
+  } catch {
+    // 网络/超时错误也走拆块重试。
+  }
+  const threshold = Math.max(1, Math.ceil(lines.length * 0.8))
+  if (translations.size >= threshold || lines.length <= 1) return translations
+
+  const middle = Math.ceil(lines.length / 2)
+  const left = await translateChunkWithFallback(
+    lines.slice(0, middle),
+    title,
+    artist,
+    config,
+    chat
+  )
+  const right = await translateChunkWithFallback(
+    lines.slice(middle),
+    title,
+    artist,
+    config,
+    chat
+  )
+  for (const [index, text] of left) translations.set(index, text)
+  for (const [index, text] of right) translations.set(index, text)
+  return translations
 }
 
 /**
@@ -304,23 +348,15 @@ export async function translateLyricsToChinese(
 
   let failedChunks = 0
   for (const chunk of chunks) {
-    try {
-      const result = await translateChunk(
-        chunk,
-        options.title || '',
-        options.artist || '',
-        options.aiConfig,
-        chat
-      )
-      // 一段里至少要有 60% 的行拿到中文翻译，否则按失败处理，避免只写入半段。
-      if (result.size < Math.ceil(chunk.length * 0.6)) {
-        failedChunks++
-        continue
-      }
-      for (const [index, text] of result) translations.set(index, text)
-    } catch {
-      failedChunks++
-    }
+    const result = await translateChunkWithFallback(
+      chunk,
+      options.title || '',
+      options.artist || '',
+      options.aiConfig,
+      chat
+    )
+    if (result.size < Math.ceil(chunk.length * 0.8)) failedChunks++
+    for (const [index, text] of result) translations.set(index, text)
   }
 
   if (!translations.size) {
