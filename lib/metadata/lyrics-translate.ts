@@ -80,6 +80,8 @@ export interface LyricsTranslationStats {
   kana: number
   hangul: number
   latin: number
+  /** 纯中文行数（不含假名/韩文），用来识别“中文歌里夹英文”的情况。 */
+  chineseLines: number
   foreignGroups: number
   coveredGroups: number
   /** 有外语内容的时间戳分组里，已经有中文翻译的比例。 */
@@ -91,11 +93,21 @@ export function analyzeLyricsTranslation(text: string): LyricsTranslationStats {
   const groups = lyricGroups(text)
   const foreign = groups.filter((group) => group.hasForeign)
   const covered = foreign.filter((group) => group.hasChinese)
+  const chineseLines = groups.reduce(
+    (total, group) =>
+      total +
+      group.lines.filter((line) => {
+        const cjk = countMatches(line, CJK_RE)
+        return cjk >= 2 && !countMatches(line, KANA_RE) && !countMatches(line, HANGUL_RE)
+      }).length,
+    0
+  )
   return {
     cjk: countMatches(value, CJK_RE),
     kana: countMatches(value, KANA_RE),
     hangul: countMatches(value, HANGUL_RE),
     latin: countMatches(value, LATIN_RE),
+    chineseLines,
     foreignGroups: foreign.length,
     coveredGroups: covered.length,
     coverage: foreign.length ? covered.length / foreign.length : 1,
@@ -104,7 +116,8 @@ export function analyzeLyricsTranslation(text: string): LyricsTranslationStats {
 
 /**
  * 判断歌词是否需要翻译成中文：
- * - 中文占主导的歌词不翻译，避免把只夹了几句英文/韩文的中文歌误判；
+ * - 有足够多纯中文行的歌视为中文歌，即使夹了英文副歌也不整首翻译；
+ * - 中文占主导的歌词不翻译；
  * - 按时间戳检查真实翻译覆盖率，已完整翻译的双语歌词不重复翻译；
  * - 部分翻译的外语歌词只补译缺失行；
  * - 日文假名/韩文、拉丁字母为主且中文很少的歌词需要翻译。
@@ -114,6 +127,15 @@ export function shouldTranslateLyricsToChinese(text: string): boolean {
   if (!lyricTextWithoutTags(text)) return false
   const stats = analyzeLyricsTranslation(text)
   if (!stats.foreignGroups) return false
+  // 中文歌里夹英文副歌通常没有翻译行（coverage 接近 0），不整首翻译；
+  // 但已经有较多中文翻译行的外语歌要继续补译剩余部分。
+  if (
+    stats.chineseLines >= 5 &&
+    stats.cjk >= 30 &&
+    stats.coverage < 0.2
+  ) {
+    return false
+  }
   const foreign = stats.kana + stats.hangul + stats.latin
   if (stats.cjk >= 10 && stats.cjk >= foreign * 0.6) return false
   return stats.coverage < 0.9

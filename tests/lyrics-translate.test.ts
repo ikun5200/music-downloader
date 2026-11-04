@@ -40,12 +40,40 @@ describe('lyrics translation detection', () => {
     ).toBe(false)
   })
 
+  it('does not translate a Chinese song with an English chorus', () => {
+    expect(
+      shouldTranslateLyricsToChinese(
+        [
+          '[00:01.00]第一句中文歌词在这里',
+          '[00:02.00]第二句中文歌词在这里',
+          '[00:03.00]第三句中文歌词在这里',
+          '[00:04.00]第四句中文歌词在这里',
+          '[00:05.00]第五句中文歌词在这里',
+          '[00:06.00]Hey greedy don’t fret',
+          '[00:07.00]What you see is what you get',
+        ].join('\n')
+      )
+    ).toBe(false)
+  })
+
   it('detects partially translated foreign lyrics', () => {
     expect(
       shouldTranslateLyricsToChinese(
         '[00:01.00]This is a long English lyric line\n[00:01.00]这是一句很长的英文歌词\n[00:02.00]This is another long English lyric line'
       )
     ).toBe(true)
+  })
+
+  it('still completes a partially translated foreign song with many Chinese lines', () => {
+    const lines = []
+    for (let i = 0; i < 5; i++) {
+      lines.push(`[00:0${i + 1}.00]This is English lyric line number ${i + 1}`)
+      lines.push(`[00:0${i + 1}.00]这是第 ${i + 1} 句英文歌词的中文翻译`)
+    }
+    for (let i = 0; i < 5; i++) {
+      lines.push(`[00:1${i}.00]This is untranslated English lyric line ${i + 1}`)
+    }
+    expect(shouldTranslateLyricsToChinese(lines.join('\n'))).toBe(true)
   })
 })
 
