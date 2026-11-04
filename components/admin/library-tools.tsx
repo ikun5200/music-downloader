@@ -78,7 +78,7 @@ const TABS: Array<{
     type: 'lyrics',
     label: '歌词工作流',
     icon: FileText,
-    desc: '找缺失、乱码、无时间轴、繁体或开头带制作信息的歌词，多源抓取并清理后写回文件。',
+    desc: '找缺失、乱码、无时间轴、繁体、制作信息或缺少中文翻译的歌词，多源抓取并清理后写回文件。',
   },
   {
     type: 'covers',
@@ -715,6 +715,9 @@ function WorkflowPanel({
   const retryable = result.items
     .filter((item) => item.status === 'not_found' || item.status === 'failed')
     .map((item) => item.path)
+  const skippedManual = result.items
+    .filter((item) => item.status === 'skipped' && item.note.includes('可强制重试'))
+    .map((item) => item.path)
   // 兼容旧结果：旧版本把“扫描后待修复”也记成 skipped。
   const pending = result.items
     .filter(
@@ -751,6 +754,11 @@ function WorkflowPanel({
           {retryable.length ? (
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => void apply(retryable)}>
               <RefreshCw className="h-3.5 w-3.5" /> 仅重试未找到/失败 {retryable.length}
+            </Button>
+          ) : null}
+          {skippedManual.length ? (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => void apply(skippedManual)}>
+              <RefreshCw className="h-3.5 w-3.5" /> 强制重试已跳过 {skippedManual.length}
             </Button>
           ) : null}
         </div>
@@ -1164,7 +1172,8 @@ export function LibraryTools() {
       </div>
 
       <p className="mt-3 text-[10px] leading-4 text-white/20">
-        说明：工具只修改下载目录内的音频文件；删除操作会二次确认。飞牛音乐的封面/歌词缓存和数据库不会自动刷新，
+        扫描结果按文件大小/修改时间缓存，未变化的文件不会重复解析；没歌词的文件查过一次无结果后 30
+        天内自动跳过，可点「强制重试已跳过」。飞牛音乐的封面/歌词缓存和数据库不会自动刷新，
         文件写入后需要在飞牛音乐里重新扫描媒体库。
       </p>
     </div>

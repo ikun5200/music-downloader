@@ -178,3 +178,22 @@ model AiUsageLog {
   @@index([createdAt])
   @@index([feature, createdAt])
 }
+
+model LibraryScanCache {
+  path         String   @id
+  size         Int
+  mtimeMs      Float
+  coverChecked Boolean  @default(false)
+  version      Int      @default(1)
+  payload      String
+  updatedAt    DateTime @updatedAt
+}
+
+model LyricsLookup {
+  path      String   @id
+  signature String
+  status    String
+  note      String?
+  attempts  Int      @default(1)
+  updatedAt DateTime @updatedAt
+}

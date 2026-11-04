@@ -27,46 +27,103 @@ export function hasChineseLyrics(text: string): boolean {
   return countMatches(text, CJK_RE) >= 2
 }
 
-export function isBilingualLyrics(text: string): boolean {
-  const seen = new Set<string>()
-  let duplicates = 0
+function firstTimestampKey(prefix: string): string {
+  return (prefix.match(/\[[^\]]+\]/)?.[0] || prefix).replace(/\s/g, '')
+}
+
+interface LyricGroup {
+  key: string
+  timestamp: string
+  lines: string[]
+  hasChinese: boolean
+  hasForeign: boolean
+}
+
+function lyricGroups(text: string): LyricGroup[] {
+  const groups = new Map<string, LyricGroup>()
   for (const line of String(text || '').replace(/\r\n?/g, '\n').split('\n')) {
     const match = line.match(TIMESTAMP_LINE_RE)
-    if (!match) continue
-    const key = match[1].replace(/\s/g, '')
-    if (seen.has(key)) duplicates++
-    else seen.add(key)
-    if (duplicates >= 3) return true
+    const value = match?.[2]?.trim()
+    if (!match || !value) continue
+    const key = firstTimestampKey(match[1])
+    const group = groups.get(key) || {
+      key,
+      timestamp: match[1].trim(),
+      lines: [],
+      hasChinese: false,
+      hasForeign: false,
+    }
+    group.lines.push(value)
+    groups.set(key, group)
   }
-  return false
+  for (const group of groups.values()) {
+    for (const line of group.lines) {
+      const kana = countMatches(line, KANA_RE)
+      const hangul = countMatches(line, HANGUL_RE)
+      const cjk = countMatches(line, CJK_RE)
+      // 日文/韩文原文里也常含汉字，不能只凭“有汉字”就当成中文翻译行。
+      if (cjk >= 2 && !kana && !hangul) group.hasChinese = true
+      if (
+        kana > 0 ||
+        hangul > 0 ||
+        (countMatches(line, LATIN_RE) > 0 && cjk === 0)
+      ) {
+        group.hasForeign = true
+      }
+    }
+  }
+  return [...groups.values()]
+}
+
+export interface LyricsTranslationStats {
+  cjk: number
+  kana: number
+  hangul: number
+  latin: number
+  foreignGroups: number
+  coveredGroups: number
+  /** 有外语内容的时间戳分组里，已经有中文翻译的比例。 */
+  coverage: number
+}
+
+export function analyzeLyricsTranslation(text: string): LyricsTranslationStats {
+  const value = lyricTextWithoutTags(String(text || ''))
+  const groups = lyricGroups(text)
+  const foreign = groups.filter((group) => group.hasForeign)
+  const covered = foreign.filter((group) => group.hasChinese)
+  return {
+    cjk: countMatches(value, CJK_RE),
+    kana: countMatches(value, KANA_RE),
+    hangul: countMatches(value, HANGUL_RE),
+    latin: countMatches(value, LATIN_RE),
+    foreignGroups: foreign.length,
+    coveredGroups: covered.length,
+    coverage: foreign.length ? covered.length / foreign.length : 1,
+  }
 }
 
 /**
  * 判断歌词是否需要翻译成中文：
- * - 已有双语时间轴（网易云 tlyric 合并后的结果）不重复翻译；
- * - 日文假名/韩文优先翻译；
- * - 拉丁字母为主、中文很少的歌词翻译；
- * - 纯中文歌词不翻译。
+ * - 中文占主导的歌词不翻译，避免把只夹了几句英文/韩文的中文歌误判；
+ * - 按时间戳检查真实翻译覆盖率，已完整翻译的双语歌词不重复翻译；
+ * - 部分翻译的外语歌词只补译缺失行；
+ * - 日文假名/韩文、拉丁字母为主且中文很少的歌词需要翻译。
  */
 export function shouldTranslateLyricsToChinese(text: string): boolean {
   if (isTtmlLyrics(text)) return false
-  const value = lyricTextWithoutTags(text)
-  if (!value) return false
-  if (isBilingualLyrics(text)) return false
-
-  const kana = countMatches(value, KANA_RE)
-  const hangul = countMatches(value, HANGUL_RE)
-  const cjk = countMatches(value, CJK_RE)
-  const latin = countMatches(value, LATIN_RE)
-  if (kana >= 2 || hangul >= 2) return true
-  if (latin >= 20 && cjk < latin * 0.15) return true
-  return false
+  if (!lyricTextWithoutTags(text)) return false
+  const stats = analyzeLyricsTranslation(text)
+  if (!stats.foreignGroups) return false
+  const foreign = stats.kana + stats.hangul + stats.latin
+  if (stats.cjk >= 10 && stats.cjk >= foreign * 0.6) return false
+  return stats.coverage < 0.9
 }
 
 interface LyricLine {
   index: number
   raw: string
   timestamp: string
+  key: string
   text: string
 }
 
@@ -76,7 +133,13 @@ function lyricLines(text: string): LyricLine[] {
   for (const line of String(text || '').replace(/\r\n?/g, '\n').split('\n')) {
     const match = line.match(TIMESTAMP_LINE_RE)
     if (!match || !match[2].trim()) continue
-    lines.push({ index, raw: line, timestamp: match[1], text: match[2].trim() })
+    lines.push({
+      index,
+      raw: line,
+      timestamp: match[1],
+      key: firstTimestampKey(match[1]),
+      text: match[2].trim(),
+    })
     index++
   }
   return lines
@@ -187,7 +250,15 @@ export async function translateLyricsToChinese(
   }
 
   const allLines = lyricLines(original)
-  const lines = allLines.filter(shouldTranslateLine)
+  // 已有中文翻译的时间戳分组直接跳过，只补译缺失的外语行。
+  const covered = new Set(
+    lyricGroups(original)
+      .filter((group) => group.hasForeign && group.hasChinese)
+      .map((group) => group.key)
+  )
+  const lines = allLines.filter(
+    (line) => shouldTranslateLine(line) && !covered.has(line.key)
+  )
   if (!lines.length) {
     return { text: original, translatedLines: 0, aiUsed: false, note: '没有需要翻译的外语歌词行' }
   }

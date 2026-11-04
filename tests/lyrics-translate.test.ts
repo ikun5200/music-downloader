@@ -31,6 +31,22 @@ describe('lyrics translation detection', () => {
       )
     ).toBe(false)
   })
+
+  it('does not flag a Chinese song because it contains a short foreign phrase', () => {
+    expect(
+      shouldTranslateLyricsToChinese(
+        '[00:01.00]这是中文歌词，今天也很开心\n[00:02.00]我们一起唱歌吧\n[00:03.00]안녕하세요'
+      )
+    ).toBe(false)
+  })
+
+  it('detects partially translated foreign lyrics', () => {
+    expect(
+      shouldTranslateLyricsToChinese(
+        '[00:01.00]This is a long English lyric line\n[00:01.00]这是一句很长的英文歌词\n[00:02.00]This is another long English lyric line'
+      )
+    ).toBe(true)
+  })
 })
 
 describe('AI lyrics translation', () => {
@@ -54,6 +70,31 @@ describe('AI lyrics translation', () => {
     expect(result.text).toContain('[00:01.00]This is the first English lyric line')
     expect(result.text).toContain('[00:01.00]这是第一句英文歌词的翻译')
     expect(result.text).toContain('[00:02.00]这是第二句英文歌词的翻译')
+  })
+
+  it('only translates timestamps that do not have a Chinese line yet', async () => {
+    const chat = vi.fn(async (_config: unknown, messages: unknown) => {
+      const payload = JSON.parse(
+        String((messages as Array<{ content?: string }>)[1]?.content || '{}')
+      )
+      expect(payload.lines).toEqual([
+        { i: 2, text: 'This is another long English lyric line' },
+      ])
+      return JSON.stringify({
+        translations: [{ i: 2, text: '这是另一句很长的英文歌词' }],
+      })
+    })
+    const source =
+      '[00:01.00]This is a long English lyric line\n[00:01.00]这是一句很长的英文歌词\n[00:02.00]This is another long English lyric line'
+    const result = await translateLyricsToChinese(source, {
+      aiConfig,
+      aiEnabled: true,
+      chat: chat as never,
+    })
+    expect(result.translatedLines).toBe(1)
+    expect(result.text).toContain('[00:01.00]这是一句很长的英文歌词')
+    expect(result.text).toContain('[00:02.00]这是另一句很长的英文歌词')
+    expect(result.text.match(/这是一句很长的英文歌词/g)).toHaveLength(1)
   })
 
   it('keeps the original when AI returns invalid content', async () => {

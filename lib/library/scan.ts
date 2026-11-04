@@ -6,9 +6,13 @@ import { promisify } from 'util'
 import { actualQuality } from '../download/quality'
 import { isSyncedLyrics } from '../metadata/normalize'
 import { KUGOU_PLACEHOLDER_COVER_SHA256 } from '../metadata/cover'
+import { prisma } from '../db'
 import type { LibraryFile } from './types'
 
 const execFileAsync = promisify(execFile)
+
+/** 扫描结果结构变化时递增，让旧缓存自动失效。 */
+const SCAN_CACHE_VERSION = 1
 
 export const AUDIO_EXTENSIONS = new Set([
   '.mp3',
@@ -157,20 +161,30 @@ function coverHash(buffer: Buffer): string {
 export interface ScanLibraryOptions {
   checkCover?: boolean
   concurrency?: number
+  /** 只有重复检测需要内容指纹；歌词/巡检/封面扫描可跳过，减少磁盘读取。 */
+  computeQuickHash?: boolean
   onProgress?: (done: number, total: number) => void
   shouldCancel?: () => boolean
+}
+
+export interface InspectLibraryOptions {
+  computeQuickHash?: boolean
 }
 
 export async function inspectLibraryFile(
   root: string,
   absolute: string,
-  checkCover = true
+  checkCover = true,
+  options: InspectLibraryOptions = {}
 ): Promise<LibraryFile> {
   const relative = relativeLibraryPath(root, absolute)
   const stat = await fs.stat(absolute).catch(() => null)
   const size = stat?.size || 0
   const mtimeMs = stat?.mtimeMs || 0
-  const hash = await quickHash(absolute, size).catch(() => '')
+  const hash =
+    options.computeQuickHash === false
+      ? ''
+      : await quickHash(absolute, size).catch(() => '')
 
   const base: LibraryFile = {
     path: relative,
@@ -315,15 +329,101 @@ export async function mapLimit<T, R>(
   return results
 }
 
+interface ScanCacheRow {
+  path: string
+  size: number
+  mtimeMs: number
+  coverChecked: boolean
+  version: number
+  payload: string
+}
+
+async function loadScanCache(): Promise<Map<string, ScanCacheRow>> {
+  try {
+    const rows = await prisma.libraryScanCache.findMany()
+    return new Map(rows.map((row) => [row.path, row]))
+  } catch {
+    // 缓存只是加速手段，表不存在或数据库忙时退回逐文件扫描。
+    return new Map()
+  }
+}
+
+async function saveScanCache(
+  rows: Array<Omit<ScanCacheRow, 'version'>>
+): Promise<void> {
+  for (let index = 0; index < rows.length; index += 100) {
+    const chunk = rows.slice(index, index + 100)
+    try {
+      await prisma.$transaction(
+        chunk.map((row) =>
+          prisma.libraryScanCache.upsert({
+            where: { path: row.path },
+            create: { ...row, version: SCAN_CACHE_VERSION },
+            update: { ...row, version: SCAN_CACHE_VERSION },
+          })
+        )
+      )
+    } catch {
+      // 写缓存失败不影响本次扫描结果，下次会重新 probe。
+    }
+  }
+}
+
 export async function scanLibrary(
   root: string,
   options: ScanLibraryOptions = {}
 ): Promise<LibraryFile[]> {
   const files = await listAudioFiles(root)
-  return mapLimit(
+  const checkCover = options.checkCover !== false
+  const computeQuickHash = options.computeQuickHash !== false
+  const cache = await loadScanCache()
+  const updates: Array<Omit<ScanCacheRow, 'version'>> = []
+  const concurrency = options.concurrency || 4
+
+  const results = await mapLimit(
     files,
-    options.concurrency || 4,
-    (absolute) => inspectLibraryFile(root, absolute, options.checkCover !== false),
+    concurrency,
+    async (absolute) => {
+      const relative = relativeLibraryPath(root, absolute)
+      const stat = await fs.stat(absolute).catch(() => null)
+      const hit = stat ? cache.get(relative) : undefined
+      if (
+        stat &&
+        hit &&
+        hit.version === SCAN_CACHE_VERSION &&
+        hit.size === stat.size &&
+        Math.abs(hit.mtimeMs - stat.mtimeMs) < 1 &&
+        (!checkCover || hit.coverChecked)
+      ) {
+        try {
+          const cached = JSON.parse(hit.payload) as LibraryFile
+          if (!computeQuickHash || cached.quickHash) {
+            return { ...cached, path: relative, absolute, mtimeMs: stat.mtimeMs }
+          }
+        } catch {
+          // 损坏的缓存按未命中处理。
+        }
+      }
+
+      const inspected = await inspectLibraryFile(root, absolute, checkCover, {
+        computeQuickHash,
+      })
+      const { absolute: _absolute, ...payload } = inspected
+      // 解析失败可能是临时 IO 问题，不写缓存，下次扫描继续重试。
+      if (inspected.probeOk) {
+        updates.push({
+          path: inspected.path,
+          size: inspected.size,
+          mtimeMs: inspected.mtimeMs,
+          coverChecked: checkCover,
+          payload: JSON.stringify(payload),
+        })
+      }
+      return inspected
+    },
     options.onProgress
   )
+
+  await saveScanCache(updates)
+  return results
 }

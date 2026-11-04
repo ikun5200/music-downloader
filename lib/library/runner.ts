@@ -54,16 +54,70 @@ const TYPE_LABELS: Record<LibraryTaskType, string> = {
   covers: '封面工作流',
 }
 
+/** 没歌词的文件查过一次没有结果后，30 天内不再自动重复搜索。 */
+const LYRICS_LOOKUP_RETRY_MS = 30 * 24 * 60 * 60 * 1000
+
+function fileSignature(file: LibraryFile): string {
+  return `${file.size}:${Math.round(file.mtimeMs)}`
+}
+
+function recentlyLookedUp(
+  file: LibraryFile,
+  lookups: Map<string, { signature: string; status: string; updatedAt: Date }>
+): boolean {
+  const row = lookups.get(file.path)
+  if (!row || row.signature !== fileSignature(file)) return false
+  if (row.status === 'fixed') return false
+  return Date.now() - row.updatedAt.getTime() < LYRICS_LOOKUP_RETRY_MS
+}
+
+async function saveLyricsLookups(
+  files: LibraryFile[],
+  items: LyricsWorkflowItem[]
+): Promise<void> {
+  const byPath = new Map(items.map((item) => [item.path, item]))
+  for (const file of files) {
+    const item = byPath.get(file.path)
+    if (!item) continue
+    if (item.status === 'fixed') {
+      await prisma.lyricsLookup.delete({ where: { path: file.path } }).catch(() => {})
+      continue
+    }
+    if (
+      !file.hasLyrics &&
+      (item.status === 'not_found' || item.status === 'failed' || item.status === 'skipped')
+    ) {
+      const signature = fileSignature(file)
+      const note = item.note?.slice(0, 500) || ''
+      await prisma.lyricsLookup
+        .upsert({
+          where: { path: file.path },
+          create: { path: file.path, signature, status: item.status, note, attempts: 1 },
+          update: { signature, status: item.status, note, attempts: { increment: 1 } },
+        })
+        .catch(() => {})
+    }
+  }
+}
+
 function isInstrumental(file: LibraryFile): boolean {
   return /(伴奏|纯音乐|instrumental|karaoke|ktv|消音|钢琴版|吉他版)/i.test(
     `${file.title} ${file.album}`
   )
 }
 
-function lyricsTargets(files: LibraryFile[], settings: Awaited<ReturnType<typeof getSettings>>): LibraryFile[] {
+function lyricsTargets(
+  files: LibraryFile[],
+  settings: Awaited<ReturnType<typeof getSettings>>,
+  lookups: Map<string, { signature: string; status: string; updatedAt: Date }>,
+  force = false
+): LibraryFile[] {
   return files.filter((file) => {
     if (isInstrumental(file)) return false
-    if (!file.hasLyrics) return true
+    if (!file.hasLyrics) {
+      if (!force && recentlyLookedUp(file, lookups)) return false
+      return true
+    }
     const codes = lyricsIssueCodes(file)
     if (codes.length) return true
     if (lyricsHasHeader(file.lyrics)) return true
@@ -177,6 +231,14 @@ async function runTask(
     const checkCover =
       options.checkCover ?? (type === 'audit' || type === 'covers')
     const concurrency = cpuScanConcurrency(settings.cpuLimitPercent)
+    // ffprobe 是短进程，扫描阶段允许比“修复/下载”更高的并发；缓存命中后基本只剩 stat。
+    const scanConcurrency = Math.max(2, Math.min(8, concurrency * 2))
+    const computeQuickHash = type === 'duplicates'
+    const lookupRows =
+      type === 'lyrics'
+        ? await prisma.lyricsLookup.findMany().catch(() => [])
+        : []
+    const lookups = new Map(lookupRows.map((row) => [row.path, row]))
 
     // 指定文件（重试失败项、修复待处理项）时只 probe 这些文件，
     // 不再为了处理一个文件把整个音乐库重新扫描一遍。
@@ -186,17 +248,18 @@ async function runTask(
         : null
     let files: LibraryFile[]
     if (requestedPaths) {
-      const inspected = await mapLimit(requestedPaths, concurrency, async (relative) => {
+      const inspected = await mapLimit(requestedPaths, scanConcurrency, async (relative) => {
         const absolute = resolveLibraryPath(relative)
         if (!absolute) return null
-        return inspectLibraryFile(root, absolute, checkCover)
+        return inspectLibraryFile(root, absolute, checkCover, { computeQuickHash })
       })
       files = inspected.filter((file): file is LibraryFile => !!file)
     } else {
       const scanProgress = progressReporter(taskId)
       files = await scanLibrary(root, {
         checkCover,
-        concurrency,
+        concurrency: scanConcurrency,
+        computeQuickHash,
         onProgress: scanProgress,
       })
     }
@@ -249,34 +312,58 @@ async function runTask(
     }
 
     const pathFilter = requestedPaths ? new Set(requestedPaths) : null
-    const targets = (type === 'lyrics' ? lyricsTargets(files, settings) : coverTargets(files)).filter(
-      (file) => !pathFilter || pathFilter.has(file.path)
-    )
+    const targets = (type === 'lyrics'
+      ? lyricsTargets(files, settings, lookups, !!requestedPaths)
+      : coverTargets(files)
+    ).filter((file) => !pathFilter || pathFilter.has(file.path))
     const total = requestedPaths ? targets.length : files.length + (options.apply ? targets.length : 0)
 
     if (!options.apply) {
-      const items: Array<LyricsWorkflowItem | ReturnType<typeof toCoverItem>> = targets.map(
-        (file) =>
-          type === 'lyrics'
-            ? {
-                path: file.path,
-                title: file.title,
-                artist: file.artist,
-                album: file.album,
-                status: 'pending',
-                note: `待修复：${lyricsTargetNote(file, settings)}`,
-              }
-            : {
-                path: file.path,
-                title: file.title,
-                artist: file.artist,
-                album: file.album,
-                status: 'pending',
-                note: `待修复：${coverTargetNote(file)}`,
-              }
-      )
+      const skippedNoLyrics =
+        type === 'lyrics'
+          ? files.filter(
+              (file) =>
+                !file.hasLyrics &&
+                !isInstrumental(file) &&
+                recentlyLookedUp(file, lookups) &&
+                (!pathFilter || pathFilter.has(file.path))
+            )
+          : []
+      const items: Array<LyricsWorkflowItem | ReturnType<typeof toCoverItem>> = [
+        ...targets.map(
+          (file) =>
+            type === 'lyrics'
+              ? {
+                  path: file.path,
+                  title: file.title,
+                  artist: file.artist,
+                  album: file.album,
+                  status: 'pending' as const,
+                  note: `待修复：${lyricsTargetNote(file, settings)}`,
+                }
+              : {
+                  path: file.path,
+                  title: file.title,
+                  artist: file.artist,
+                  album: file.album,
+                  status: 'pending' as const,
+                  note: `待修复：${coverTargetNote(file)}`,
+                }
+        ),
+        ...skippedNoLyrics.map((file) => ({
+          path: file.path,
+          title: file.title,
+          artist: file.artist,
+          album: file.album,
+          status: 'skipped' as const,
+          note: '已尝试未找到歌词，30 天内跳过（可强制重试）',
+        })),
+      ]
       const label = type === 'lyrics' ? '歌词' : '封面'
-      const summary = `扫描 ${files.length} 个文件：${targets.length} 个文件需要修复${label}（仅扫描，未写入）`
+      const skippedNote = skippedNoLyrics.length
+        ? `，另有 ${skippedNoLyrics.length} 个已尝试未找到歌词（30 天内跳过）`
+        : ''
+      const summary = `扫描 ${files.length} 个文件：${targets.length} 个文件需要修复${label}${skippedNote}（仅扫描，未写入）`
       const result =
         type === 'lyrics'
           ? ({
@@ -353,6 +440,10 @@ async function runTask(
             },
             applyProgress
           )
+
+    if (type === 'lyrics') {
+      await saveLyricsLookups(targets, results as LyricsWorkflowItem[])
+    }
 
     const fixed = results.filter((item) => item.status === 'fixed').length
     const notFound = results.filter((item) => item.status === 'not_found').length
