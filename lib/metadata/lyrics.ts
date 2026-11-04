@@ -266,6 +266,91 @@ function normalizeTimestampPrefix(raw: string): string | null {
  * - 保留真正歌词的时间轴和空行；
  * - 可选地把中文歌词转成简体。
  */
+const TTML_ROOT_RE = /<tt(?:\s|>)/i
+const TTML_P_RE = /<p(?:\s|>)/i
+const LRC_LINE_RE = /^\s*(?:\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\])+\s*(.*)$/
+
+export function isTtmlLyrics(text: string | null | undefined): boolean {
+  const value = String(text || '')
+  return TTML_ROOT_RE.test(value) && TTML_P_RE.test(value)
+}
+
+function ttmlEscape(value: string): string {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function formatTtmlTime(ms: number): string {
+  const totalSeconds = Math.max(0, ms) / 1000
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = Math.floor(totalSeconds % 60)
+  const millis = Math.round((totalSeconds - Math.floor(totalSeconds)) * 1000)
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`
+}
+
+interface TtmlEntry {
+  ms: number
+  text: string
+  translation: string
+}
+
+/**
+ * 飞牛音乐原生按时间戳只保存一行歌词，普通双语 LRC 的
+ * `[00:20.38]原文` + `[00:20.38]翻译` 会在导入时丢掉翻译。
+ * 飞牛前端支持 Apple Music 风格 TTML，x-translation 会作为独立翻译显示。
+ * 只有存在“同一时间戳两行”的双语歌词时才转换，普通 LRC 原样保留。
+ */
+export function toTtmlLyrics(lyrics: string): string | null {
+  const text = String(lyrics || '').replace(/\r\n?/g, '\n').trim()
+  if (!text || isTtmlLyrics(text)) return null
+  const entries: TtmlEntry[] = []
+  for (const line of text.split('\n')) {
+    const match = line.match(LRC_LINE_RE)
+    if (!match || !match[4].trim()) continue
+    if (/^\[(?:ti|ar|al|by|offset|re|ve|length|kuwo|kugou|qq|music):/i.test(line.trim())) {
+      continue
+    }
+    const minutes = Number(match[1])
+    const seconds = Number(match[2])
+    const fraction = match[3] || ''
+    const ms =
+      minutes * 60_000 +
+      seconds * 1000 +
+      Number(fraction.padEnd(3, '0').slice(0, 3))
+    const value = match[4].trim()
+    const previous = entries[entries.length - 1]
+    if (previous && previous.ms === ms) {
+      previous.translation = previous.translation
+        ? `${previous.translation} ${value}`
+        : value
+    } else {
+      entries.push({ ms, text: value, translation: '' })
+    }
+  }
+  if (!entries.some((entry) => entry.translation.trim())) return null
+  entries.sort((a, b) => a.ms - b.ms)
+
+  const paragraphs = entries.map((entry, index) => {
+    const end = entries[index + 1]?.ms ?? entry.ms + 5000
+    const translation = entry.translation.trim()
+    const body = `${ttmlEscape(entry.text)}${
+      translation
+        ? `<span role="x-translation">${ttmlEscape(translation)}</span>`
+        : ''
+    }`
+    return `  <p begin="${formatTtmlTime(entry.ms)}" end="${formatTtmlTime(end)}">${body}</p>`
+  })
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<tt xmlns="http://www.w3.org/ns/ttml"><body><div>',
+    ...paragraphs,
+    '</div></body></tt>',
+  ].join('\n')
+}
+
 const TRANSLATION_TIMESTAMP_RE =
   /^(\s*(?:\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\])+)\s*(.*)$/
 

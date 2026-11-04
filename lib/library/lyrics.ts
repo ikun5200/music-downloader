@@ -2,6 +2,7 @@ import type { AiConfig, AppSettings } from '../settings'
 import { getMetadataAdapter } from '../metadata/sources'
 import { isSyncedLyrics, scoreCandidate, toSimplified } from '../metadata/normalize'
 import { cleanLyricsWithAi } from '../metadata/lyrics-ai'
+import { isTtmlLyrics, toTtmlLyrics } from '../metadata/lyrics'
 import {
   shouldTranslateLyricsToChinese,
   translateLyricsToChinese,
@@ -51,6 +52,7 @@ export function lyricsLookUsable(
 ): { ok: boolean; note: string; synced: boolean } {
   const text = String(raw || '').trim()
   if (!text) return { ok: false, note: '歌词为空', synced: false }
+  if (isTtmlLyrics(text)) return { ok: true, note: 'TTML 双语歌词', synced: true }
   if (MOJIBAKE_RE.test(text)) return { ok: false, note: '歌词疑似乱码', synced: false }
   const lines = meaningfulLines(text)
   if (lines.length < 2) return { ok: false, note: '有效歌词行数不足', synced: false }
@@ -157,7 +159,20 @@ export interface ApplyLyricsResult {
 }
 
 export function needsChineseTranslation(file: LibraryFile): boolean {
-  return file.hasLyrics && file.syncedLyrics && shouldTranslateLyricsToChinese(file.lyrics)
+  return (
+    file.hasLyrics &&
+    file.syncedLyrics &&
+    !isTtmlLyrics(file.lyrics) &&
+    shouldTranslateLyricsToChinese(file.lyrics)
+  )
+}
+
+export function needsFeiniuTtml(file: LibraryFile): boolean {
+  return (
+    file.hasLyrics &&
+    !isTtmlLyrics(file.lyrics) &&
+    !!toTtmlLyrics(file.lyrics)
+  )
 }
 
 export async function applyLyricsToFile(
@@ -172,6 +187,24 @@ export async function applyLyricsToFile(
 
   const translationNeeded =
     settings.lyricsTranslateToChinese && needsChineseTranslation(file)
+  // 已有双语 LRC 时只转换成飞牛能识别的 TTML，不重新抓取。
+  if (
+    needsFeiniuTtml(file) &&
+    !translationNeeded &&
+    file.syncedLyrics &&
+    !lyricsIssueCodes(file).length
+  ) {
+    const write = await writeLyricsOnly(file.absolute, file.lyrics)
+    if (!write.ok) {
+      return { status: 'failed', source: '文件已有歌词', note: write.note || '写入歌词失败' }
+    }
+    return {
+      status: 'fixed',
+      source: '文件已有歌词',
+      note: '转换为飞牛翻译格式（TTML）',
+      preview: meaningfulLines(file.lyrics).slice(0, 2).join(' / ').slice(0, 160),
+    }
+  }
   // 已有可用的外语歌词时只做翻译，不重新抓取，避免换掉原本正确的时间轴。
   const canUseExisting =
     translationNeeded &&
@@ -255,6 +288,7 @@ export async function applyLyricsToFile(
 }
 
 export function lyricsIssueCodes(file: LibraryFile): string[] {
+  if (isTtmlLyrics(file.lyrics)) return []
   const codes: string[] = []
   if (!file.hasLyrics) codes.push('missing_lyrics')
   if (file.hasLyrics && MOJIBAKE_RE.test(file.lyrics)) codes.push('lyrics_mojibake')

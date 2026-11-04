@@ -1,6 +1,7 @@
 import type { AiConfig } from '../settings'
 import { chatCompletion, extractJsonObject, type ChatMessage } from '../ai/client'
 import { toSimplified } from './normalize'
+import { isTtmlLyrics } from './lyrics'
 
 const TIMESTAMP_LINE_RE = /^(\s*(?:\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\])+)\s*(.*)$/
 const KANA_RE = /[\u3040-\u30ff]/g
@@ -48,6 +49,7 @@ export function isBilingualLyrics(text: string): boolean {
  * - 纯中文歌词不翻译。
  */
 export function shouldTranslateLyricsToChinese(text: string): boolean {
+  if (isTtmlLyrics(text)) return false
   const value = lyricTextWithoutTags(text)
   if (!value) return false
   if (isBilingualLyrics(text)) return false
@@ -174,6 +176,9 @@ export async function translateLyricsToChinese(
 ): Promise<TranslateLyricsResult> {
   const original = String(lyrics || '').replace(/\r\n?/g, '\n').trim()
   if (!original) return { text: original, translatedLines: 0, aiUsed: false, note: '歌词为空' }
+  if (isTtmlLyrics(original)) {
+    return { text: original, translatedLines: 0, aiUsed: false, note: '歌词已含飞牛翻译格式' }
+  }
   if (!options.aiEnabled || !options.aiConfig?.enabled || !options.aiConfig.apiKey) {
     return { text: original, translatedLines: 0, aiUsed: false, note: 'AI 未启用或未配置' }
   }

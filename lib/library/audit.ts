@@ -1,6 +1,6 @@
 import path from 'path'
 import { QUALITY_RANK } from '../constants'
-import { cleanLyrics } from '../metadata/lyrics'
+import { cleanLyrics, isTtmlLyrics } from '../metadata/lyrics'
 import { artistKeys, titleKey, toSimplified } from '../metadata/normalize'
 import type {
   AuditIssueRow,
@@ -27,6 +27,7 @@ function meaningfulLines(text: string): string[] {
 }
 
 export function lyricsHasHeader(raw: string): boolean {
+  if (isTtmlLyrics(raw)) return false
   const lines = meaningfulLines(raw)
   if (!lines.length) return false
   const cleaned = meaningfulLines(
@@ -117,7 +118,7 @@ function fileIssues(file: LibraryFile, job: LibraryJobRef | undefined): LibraryI
     if (!file.syncedLyrics) {
       issues.push(issue('lyrics_unsynced', 'warn', '歌词没有时间轴，无法滚动'))
     }
-    if (toSimplified(file.lyrics) !== file.lyrics) {
+    if (!isTtmlLyrics(file.lyrics) && toSimplified(file.lyrics) !== file.lyrics) {
       issues.push(issue('lyrics_traditional', 'info', '歌词含繁体字'))
     }
     if (meaningfulLines(file.lyrics).length < 2) {

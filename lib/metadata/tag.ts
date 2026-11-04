@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { fetchImage } from './http'
 import { isPlaceholderCover } from './cover'
-import { cleanLyrics } from './lyrics'
+import { cleanLyrics, toTtmlLyrics } from './lyrics'
 import type { MetadataCandidate, MetadataWriteResult } from './types'
 import { normalizeArtists } from '../artists'
 
@@ -110,7 +110,7 @@ function buildMetadataArgs(
   }
   if (options.writeLyrics) {
     const rawLyrics = tagValue(candidate.lyrics)
-    const lyrics = rawLyrics
+    const cleaned = rawLyrics
       ? cleanLyrics(rawLyrics, {
           title: candidate.title,
           artist: candidate.artist,
@@ -118,6 +118,9 @@ function buildMetadataArgs(
           simplify: options.lyricsSimplify,
         })
       : ''
+    // 飞牛音乐导入普通双语 LRC 时会按时间戳去重，翻译行会丢失。
+    // 有翻译时写 Apple Music 风格 TTML，飞牛会单独显示 x-translation。
+    const lyrics = cleaned ? toTtmlLyrics(cleaned) || cleaned : ''
     if (lyrics) args.push('-metadata', `lyrics=${lyrics}`)
   }
   return args

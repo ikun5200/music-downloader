@@ -29,7 +29,10 @@ export function isCompilationAlbum(value: string | null | undefined): boolean {
 }
 
 export function isSyncedLyrics(value: string | null | undefined): boolean {
-  return /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/.test(String(value || ''))
+  const text = String(value || '')
+  // 飞牛兼容的 Apple Music TTML 歌词也是带时间轴的。
+  if (/<tt(?:\s|>)/i.test(text) && /<p(?:\s|>)/i.test(text)) return true
+  return /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/.test(text)
 }
 
 const RELEASE_SUFFIX_RE =
