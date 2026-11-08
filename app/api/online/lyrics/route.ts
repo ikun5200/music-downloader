@@ -63,6 +63,8 @@ export async function POST(req: Request) {
     }
     const cleaned =
       cleanLyrics(fetched.lyrics, {
+        title: parsed.data.title,
+        artist: parsed.data.artist,
         cleanCredits: settings.lyricsCleanCredits,
         simplify: settings.lyricsSimplify,
       }) || fetched.lyrics
