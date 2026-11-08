@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { cn, formatDuration } from '@/lib/utils'
+import { getItunesAlbum, searchItunes } from '@/lib/online/itunes'
 import type {
   OnlineCard,
   OnlineCollection,
@@ -525,10 +526,17 @@ export function OnlineClient({ initial }: { initial: OnlineHome }) {
     setCollectionError('')
     setCollection(null)
     try {
-      const res = await fetch(`/api/online/collection?url=${encodeURIComponent(card.url)}`)
-      const json = await res.json()
-      if (!res.ok || json.code !== 0) throw new Error(json.message || '加载失败')
-      setCollection(json.data as OnlineCollection)
+      // 专辑直接由浏览器请求 Apple（CORS 允许）；歌单仍用服务端解析。
+      if (card.kind === 'album' && card.appleId) {
+        const album = await getItunesAlbum(card.appleId)
+        if (!album) throw new Error('没有读取到专辑曲目')
+        setCollection(album)
+      } else {
+        const res = await fetch(`/api/online/collection?url=${encodeURIComponent(card.url)}`)
+        const json = await res.json()
+        if (!res.ok || json.code !== 0) throw new Error(json.message || '加载失败')
+        setCollection(json.data as OnlineCollection)
+      }
     } catch (e) {
       setCollectionError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -544,10 +552,15 @@ export function OnlineClient({ initial }: { initial: OnlineHome }) {
     setSearchError('')
     setSearchResult(null)
     try {
-      const res = await fetch(`/api/online/search?q=${encodeURIComponent(value)}`)
-      const json = await res.json()
-      if (!res.ok || json.code !== 0) throw new Error(json.message || '搜索失败')
-      setSearchResult(json.data as OnlineSearchResult)
+      // 浏览器直接请求 Apple iTunes Search，不经过 NAS；失败再回退服务端。
+      try {
+        setSearchResult(await searchItunes(value))
+      } catch {
+        const res = await fetch(`/api/online/search?q=${encodeURIComponent(value)}`)
+        const json = await res.json()
+        if (!res.ok || json.code !== 0) throw new Error(json.message || '搜索失败')
+        setSearchResult(json.data as OnlineSearchResult)
+      }
     } catch (e) {
       setSearchError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -979,7 +992,7 @@ export function OnlineClient({ initial }: { initial: OnlineHome }) {
       {playerOpen && current ? (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-[#08080a]">
           <div
-            className="pointer-events-none fixed inset-0 opacity-35 blur-3xl"
+            className="pointer-events-none fixed inset-0 opacity-45 blur-3xl"
             style={artworkStyle(current.artwork)}
           />
           <div className="relative mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-5 py-5 sm:px-10">
@@ -994,7 +1007,7 @@ export function OnlineClient({ initial }: { initial: OnlineHome }) {
                 <ChevronRight className="h-4 w-4 rotate-90" />
               </button>
             </div>
-            <div className="mt-8 grid flex-1 gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+            <div className="mt-8 grid flex-1 gap-10 lg:grid-cols-[0.7fr_1.3fr] lg:items-center">
               <div className="mx-auto w-full max-w-[430px]">
                 <Artwork
                   artwork={current.artwork}
@@ -1073,41 +1086,60 @@ export function OnlineClient({ initial }: { initial: OnlineHome }) {
                 </div>
               </div>
 
-              <div className="flex min-h-[300px] flex-col rounded-2xl border border-white/[0.06] bg-black/20 p-5 lg:max-h-[70vh]">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-[12px] font-medium text-white/70">
+              <div className="relative flex h-[58vh] min-h-[380px] flex-col lg:h-[78vh] lg:min-h-[520px]">
+                <div className="flex items-center justify-between gap-3 px-1">
+                  <div className="flex items-center gap-2 text-[12px] font-medium tracking-[0.02em] text-white/65">
                     <Music2 className="h-4 w-4 text-[#fa2d48]" /> 歌词
                   </div>
                   <div className="text-[10px] text-white/25">
                     {lyricsLoading ? '加载中…' : lyricsSource || '暂无歌词'}
                   </div>
                 </div>
-                <div ref={lyricsRef} className="mt-4 min-h-0 flex-1 overflow-y-auto pr-2">
+                <div
+                  ref={lyricsRef}
+                  className="scrollbar-none mt-2 min-h-0 flex-1 overflow-y-auto px-1 py-16 lg:py-[30vh]"
+                  style={{
+                    maskImage:
+                      'linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%)',
+                    WebkitMaskImage:
+                      'linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%)',
+                  }}
+                >
                   {lyricsLoading ? (
                     <div className="flex items-center gap-2 py-10 text-[12px] text-white/30">
                       <Loader2 className="h-4 w-4 animate-spin" /> 正在获取歌词…
                     </div>
                   ) : parsedLyrics.synced.length ? (
-                    <div className="space-y-4 pb-12">
+                    <div className="space-y-5">
                       {parsedLyrics.synced.map((line, index) => (
-                        <p
+                        <button
                           key={`${line.time}-${index}`}
+                          type="button"
                           data-lyric-line={index}
+                          onClick={() => {
+                            setCurrentTime(line.time)
+                            if (audioRef.current) audioRef.current.currentTime = line.time
+                          }}
                           className={cn(
-                            'text-[17px] font-semibold leading-8 transition-colors duration-300 sm:text-[20px]',
+                            'block w-full origin-left text-left text-[24px] font-semibold leading-[1.32] tracking-[-0.035em] transition-all duration-500 sm:text-[30px]',
                             index === activeLyricIndex
-                              ? 'text-white'
-                              : 'text-white/30 hover:text-white/55'
+                              ? 'scale-[1.015] text-white drop-shadow-[0_2px_24px_rgba(255,255,255,0.14)]'
+                              : 'text-white/20 hover:text-white/45'
                           )}
                         >
                           {line.text}
-                        </p>
+                        </button>
                       ))}
                     </div>
                   ) : parsedLyrics.plain.length ? (
-                    <div className="space-y-2 pb-12 text-[13px] leading-6 text-white/50">
+                    <div className="space-y-3 pb-6">
                       {parsedLyrics.plain.map((line, index) => (
-                        <p key={`${line}-${index}`}>{line}</p>
+                        <p
+                          key={`${line}-${index}`}
+                          className="text-[18px] font-semibold leading-8 tracking-[-0.02em] text-white/55 sm:text-[22px]"
+                        >
+                          {line}
+                        </p>
                       ))}
                     </div>
                   ) : (

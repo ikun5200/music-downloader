@@ -2,7 +2,8 @@ import type { Metadata } from 'next'
 import { OnlineClient } from '@/components/online/online-client'
 import { getAppleNewHome } from '@/lib/online/apple'
 
-export const dynamic = 'force-dynamic'
+// 页面静态化，Apple 推荐每 6 小时由服务端在后台更新一次，不占用户请求时的资源。
+export const revalidate = 21600
 
 export const metadata: Metadata = {
   title: '新发现 · 声渡音乐',

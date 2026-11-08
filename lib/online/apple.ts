@@ -14,7 +14,7 @@ const RSS_ALBUMS_URL =
   'https://rss.applemarketingtools.com/api/v2/cn/music/most-played/18/albums.json'
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36'
-const HOME_TTL = 30 * 60 * 1000
+const HOME_TTL = 6 * 60 * 60 * 1000
 const COLLECTION_TTL = 30 * 60 * 1000
 const SEARCH_TTL = 5 * 60 * 1000
 const CACHE_MAX = 80
@@ -213,7 +213,7 @@ async function fetchAppleHtml(url: string): Promise<string> {
         'Accept-Language': 'zh-CN,zh;q=0.9',
         Accept: 'text/html,application/xhtml+xml',
       },
-      cache: 'no-store',
+      next: { revalidate: 21_600 },
       signal: controller.signal,
     })
     if (!res.ok) throw new Error(`Apple Music HTTP ${res.status}`)
@@ -225,7 +225,7 @@ async function fetchAppleHtml(url: string): Promise<string> {
 
 async function rssFallback(): Promise<OnlineHome> {
   try {
-    const res = await fetch(RSS_ALBUMS_URL, { cache: 'no-store' })
+    const res = await fetch(RSS_ALBUMS_URL, { next: { revalidate: 21_600 } })
     if (!res.ok) throw new Error(`RSS HTTP ${res.status}`)
     const json = (await res.json()) as Json
     const results = list(record(json.feed).results)
