@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { canCreateDownloads, downloadForbiddenResponse } from '@/lib/download/access'
 import { wakeQueue } from '@/lib/download/queue'
 import { ensureRuntime } from '@/lib/runtime'
 
@@ -8,6 +9,9 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   await ensureRuntime()
+  if (!(await canCreateDownloads())) {
+    return NextResponse.json(downloadForbiddenResponse(), { status: 401 })
+  }
   const { id } = await ctx.params
   const job = await prisma.downloadJob.findUnique({ where: { id } })
   if (!job) return NextResponse.json({ code: 404, message: '任务不存在' }, { status: 404 })

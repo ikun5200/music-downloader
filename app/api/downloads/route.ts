@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getClientIp } from '@/lib/auth'
+import { canCreateDownloads, downloadForbiddenResponse } from '@/lib/download/access'
 import { type Platform } from '@/lib/constants'
 import { rateLimit } from '@/lib/rate-limit'
 import { prisma } from '@/lib/db'
@@ -72,6 +73,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   await ensureRuntime()
+  if (!(await canCreateDownloads())) {
+    return NextResponse.json(downloadForbiddenResponse(), { status: 401 })
+  }
   const ip = getClientIp(req)
   const limit = rateLimit(`downloads:create:${ip}`, 20, 60_000)
   if (!limit.ok) {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   AlertCircle,
@@ -9,6 +10,7 @@ import {
   Download,
   Layers,
   ListPlus,
+  LockKeyhole,
   Loader2,
   Music2,
   Pause,
@@ -128,6 +130,7 @@ export function SearchClient() {
   const [batch, setBatch] = useState<BatchDto | null>(null)
   const [batchSubmitting, setBatchSubmitting] = useState(false)
   const [batchActing, setBatchActing] = useState(false)
+  const [downloadLocked, setDownloadLocked] = useState(false)
 
   const allQualities = useMemo(() => {
     if (!data) return []
@@ -177,6 +180,17 @@ export function SearchClient() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/site', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.code === 0 && json.data?.guestDownloadDisabled && !json.data?.isAdmin) {
+          setDownloadLocked(true)
+        }
+      })
+      .catch(() => {})
   }, [])
 
   const batchRunning = !!batch && ['queued', 'running'].includes(batch.status)
@@ -234,6 +248,11 @@ export function SearchClient() {
 
   async function runBatch() {
     if (batchSubmitting || batchLive) return
+    if (downloadLocked) {
+      toast.error('管理员已关闭游客下载，请先登录')
+      router.push('/login?next=/')
+      return
+    }
     const lines = batchText
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -325,6 +344,11 @@ export function SearchClient() {
     : 0
 
   async function download(song: SearchSong) {
+    if (downloadLocked) {
+      toast.error('管理员已关闭游客下载，请先登录')
+      router.push('/login?next=/')
+      return
+    }
     const key = `${song.platform}:${song.id}`
     if (downloading.has(key)) return
     setDownloading((prev) => new Set(prev).add(key))
@@ -408,12 +432,25 @@ export function SearchClient() {
               size="lg"
               variant={batchMode ? 'secondary' : 'outline'}
               onClick={() => {
+                if (downloadLocked) {
+                  toast.error('管理员已关闭游客下载，请先登录')
+                  router.push('/login?next=/')
+                  return
+                }
                 setBatchMode((v) => !v)
                 setError(null)
                 setTimeout(() => batchInputRef.current?.focus(), 50)
               }}
-              title="批量下载：一行一首歌，自动搜索并选择最优版本入队"
-              className={cn('sm:w-12 sm:px-0', batchMode && 'border-violet-400/40 text-violet-200')}
+              title={
+                downloadLocked
+                  ? '游客下载已关闭，登录后可批量下载'
+                  : '批量下载：一行一首歌，自动搜索并选择最优版本入队'
+              }
+              className={cn(
+                'sm:w-12 sm:px-0',
+                batchMode && 'border-violet-400/40 text-violet-200',
+                downloadLocked && 'opacity-45'
+              )}
             >
               <ListPlus className="h-[18px] w-[18px]" />
               <span className="sm:hidden">批量下载</span>
@@ -423,6 +460,16 @@ export function SearchClient() {
               {loading ? '搜索中' : '搜索'}
             </Button>
           </form>
+
+          {downloadLocked ? (
+            <div className="mt-4 flex max-w-3xl flex-wrap items-center gap-2 rounded-xl border border-amber-400/20 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-200/75">
+              <LockKeyhole className="h-3.5 w-3.5" />
+              游客模式：只能搜索和在线试听，下载与批量下载需要管理员登录。
+              <Link href="/login?next=/" className="ml-auto font-medium text-amber-100 hover:text-white">
+                去登录
+              </Link>
+            </div>
+          ) : null}
 
           {batchMode ? (
             <div className="animate-slide-up mt-4 max-w-3xl rounded-2xl border border-violet-400/20 bg-violet-500/[0.05] p-4 shadow-soft">
@@ -806,17 +853,19 @@ export function SearchClient() {
                         <Button
                           size="sm"
                           variant={canDownload ? 'secondary' : 'ghost'}
-                          disabled={!canDownload || downloading.has(key)}
+                          disabled={!canDownload || downloading.has(key) || downloadLocked}
                           onClick={(e) => {
                             e.stopPropagation()
                             void download(song)
                           }}
                           title={
-                            !platform.available
-                              ? '该平台没有启用的渠道'
-                              : !supported
-                                ? '该平台不支持所选音质'
-                                : '下载'
+                            downloadLocked
+                              ? '游客下载已关闭，登录后可下载'
+                              : !platform.available
+                                ? '该平台没有启用的渠道'
+                                : !supported
+                                  ? '该平台不支持所选音质'
+                                  : '下载'
                           }
                           className="shrink-0"
                         >

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getClientIp } from '@/lib/auth'
+import { canCreateDownloads, downloadForbiddenResponse } from '@/lib/download/access'
 import { batchesToDto } from '@/lib/batch/service'
 import { wakeBatchQueue } from '@/lib/batch/queue'
 import { prisma } from '@/lib/db'
@@ -29,6 +30,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   await ensureRuntime()
+  if (!(await canCreateDownloads())) {
+    return NextResponse.json(downloadForbiddenResponse(), { status: 401 })
+  }
 
   const ip = getClientIp(req)
   const limit = rateLimit(`batch:create:${ip}`, 10, 60_000)

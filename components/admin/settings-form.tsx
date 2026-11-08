@@ -69,6 +69,9 @@ export function SettingsForm({
   const [template, setTemplate] = useState(initial.filenameTemplate)
   const [maxSize, setMaxSize] = useState(String(initial.maxFileSizeMb))
   const [verify, setVerify] = useState(initial.verifyWrongSong)
+  const [guestDownloadDisabled, setGuestDownloadDisabled] = useState(
+    initial.guestDownloadDisabled
+  )
   const [aiEnabled, setAiEnabled] = useState(initial.aiEnabled)
   const [aiBaseUrl, setAiBaseUrl] = useState(initial.aiBaseUrl)
   const [aiModel, setAiModel] = useState(initial.aiModel)
@@ -161,6 +164,7 @@ export function SettingsForm({
           filenameTemplate: template,
           maxFileSizeMb: Number(maxSize),
           verifyWrongSong: verify,
+          guestDownloadDisabled,
           platformOrder: platformOrderRef.current,
           ...(Object.keys(sourceOrdersRef.current).length
             ? { platformPriority: sourceOrdersRef.current }
@@ -409,6 +413,20 @@ export function SettingsForm({
               </div>
             </div>
             <Switch checked={verify} onChange={setVerify} label="错歌校验" />
+          </div>
+
+          <div className="mt-4 flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[11px] text-white/55">游客下载限制</div>
+              <div className="mt-0.5 text-[10.5px] leading-4 text-white/25">
+                打开后未登录访客不能创建或重试下载，只能搜索试听和进入 /online 在线播放。
+              </div>
+            </div>
+            <Switch
+              checked={guestDownloadDisabled}
+              onChange={setGuestDownloadDisabled}
+              label="游客禁止下载"
+            />
           </div>
         </div>
 

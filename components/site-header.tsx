@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { AudioLines, Download, Search, Settings2 } from 'lucide-react'
+import { AudioLines, Download, Headphones, Search, Settings2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const links = [
   { href: '/', label: '搜索', icon: Search },
+  { href: '/online', label: '在线音乐', icon: Headphones },
   { href: '/downloads', label: '下载', icon: Download },
 ]
 

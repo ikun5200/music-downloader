@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { retryFailedBatchItems } from '@/lib/batch/retry'
+import { canCreateDownloads, downloadForbiddenResponse } from '@/lib/download/access'
 import { wakeBatchQueue } from '@/lib/batch/queue'
 import { ensureRuntime } from '@/lib/runtime'
 
@@ -11,6 +12,9 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> }
 ) {
   await ensureRuntime()
+  if (!(await canCreateDownloads())) {
+    return NextResponse.json(downloadForbiddenResponse(), { status: 401 })
+  }
   const { id } = await ctx.params
   const result = await retryFailedBatchItems(id)
 

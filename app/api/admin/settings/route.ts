@@ -17,6 +17,7 @@ const schema = z.object({
   filenameTemplate: z.string().min(1).max(200).optional(),
   maxFileSizeMb: z.number().int().min(64).max(4096).optional(),
   verifyWrongSong: z.boolean().optional(),
+  guestDownloadDisabled: z.boolean().optional(),
   platformOrder: z.array(z.enum(['kw', 'kg', 'tx', 'wy', 'mg'])).min(1).max(5).optional(),
   platformPriority: z.record(z.array(z.string())).nullable().optional(),
   aiEnabled: z.boolean().optional(),

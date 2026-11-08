@@ -26,7 +26,8 @@ export function LoginClient() {
       })
       const json = await res.json()
       if (!res.ok || json.code !== 0) throw new Error(json.message || '登录失败')
-      router.push('/admin')
+      const next = new URLSearchParams(window.location.search).get('next')
+      router.push(next && next.startsWith('/') ? next : '/admin')
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

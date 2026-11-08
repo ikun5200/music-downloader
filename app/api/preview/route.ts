@@ -16,6 +16,7 @@ const schema = z.object({
   title: z.string().max(300).optional(),
   artist: z.string().max(300).optional(),
   coverUrl: z.string().max(2000).optional().nullable(),
+  quality: z.string().max(30).optional().nullable(),
 })
 
 export async function POST(req: Request) {
@@ -44,7 +45,9 @@ export async function POST(req: Request) {
   const platform = parsed.data.platform as Platform
   const musicInfo = parsed.data.musicInfo
   try {
-    const result = await resolvePreview(platform, musicInfo)
+    const result = await resolvePreview(platform, musicInfo, {
+      quality: parsed.data.quality,
+    })
     const token = signPreviewToken(result.url, platform)
     const duration = Number(musicInfo.interval)
 

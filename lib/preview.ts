@@ -4,6 +4,11 @@ import { getRankedChannels } from './sources/selection'
 import { sourceManager } from './sources/manager'
 import { recordStat } from './sources/stats'
 
+export interface PreviewOptions {
+  /** 指定音质；auto/空表示自动选择最快可用档位。 */
+  quality?: string | null
+}
+
 export interface PreviewResult {
   url: string
   quality: string
@@ -19,7 +24,11 @@ const TOTAL_TIMEOUT = 22_000
 
 const cache = new Map<string, { at: number; result: PreviewResult }>()
 
-function cacheKey(platform: Platform, musicInfo: Record<string, unknown>): string {
+function cacheKey(
+  platform: Platform,
+  musicInfo: Record<string, unknown>,
+  preferredQuality: string
+): string {
   const id =
     musicInfo.songmid ||
     musicInfo.hash ||
@@ -28,7 +37,7 @@ function cacheKey(platform: Platform, musicInfo: Record<string, unknown>): strin
     musicInfo.rid ||
     musicInfo.musicrid ||
     ''
-  return `${platform}:${String(id)}`
+  return `${platform}:${String(id)}:${preferredQuality || 'auto'}`
 }
 
 function cacheSet(key: string, result: PreviewResult) {
@@ -45,9 +54,12 @@ function cacheSet(key: string, result: PreviewResult) {
  */
 export async function resolvePreview(
   platform: Platform,
-  musicInfo: Record<string, unknown>
+  musicInfo: Record<string, unknown>,
+  options: PreviewOptions = {}
 ): Promise<PreviewResult> {
-  const key = cacheKey(platform, musicInfo)
+  const preferredQuality =
+    options.quality && options.quality !== 'auto' ? options.quality : ''
+  const key = cacheKey(platform, musicInfo, preferredQuality)
   const hit = cache.get(key)
   if (hit && Date.now() - hit.at < CACHE_TTL) return hit.result
 
@@ -58,7 +70,10 @@ export async function resolvePreview(
 
   const available = new Set<string>()
   for (const channel of channels) for (const q of channel.qualities) available.add(q)
-  let qualities = PREFERRED_QUALITIES.filter((q) => available.has(q))
+  let qualities = preferredQuality
+    ? [preferredQuality, ...PREFERRED_QUALITIES.filter((q) => q !== preferredQuality)]
+    : PREFERRED_QUALITIES
+  qualities = qualities.filter((q) => available.has(q))
   if (!qualities.length) {
     qualities = [...available].sort((a, b) => (QUALITY_RANK[a] || 0) - (QUALITY_RANK[b] || 0))
   }

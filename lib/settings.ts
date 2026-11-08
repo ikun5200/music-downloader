@@ -15,6 +15,8 @@ export interface AppSettings {
   filenameTemplate: string
   maxFileSizeMb: number
   verifyWrongSong: boolean
+  /** 开启后未登录访客只能在线试听，不能创建/重试下载。 */
+  guestDownloadDisabled: boolean
   platformOrder: Platform[]
   platformPriority: Record<string, string[]> | null
   aiEnabled: boolean
@@ -62,6 +64,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   filenameTemplate: '{title}.{ext}',
   maxFileSizeMb: 1024,
   verifyWrongSong: true,
+  guestDownloadDisabled: false,
   platformOrder: [...PLATFORMS],
   platformPriority: null,
   aiEnabled: false,
@@ -188,6 +191,7 @@ function parseSettings(rows: { key: string; value: string }[]): AppSettings {
       Math.min(4096, Number(pick('maxFileSizeMb') || DEFAULT_SETTINGS.maxFileSizeMb) || 1024)
     ),
     verifyWrongSong: (pick('verifyWrongSong') ?? 'true') !== 'false',
+    guestDownloadDisabled: (pick('guestDownloadDisabled') ?? 'false') === 'true',
     platformOrder: parsePlatformOrder(pick('platformOrder')),
     platformPriority: priorityRaw ? safeParsePriority(priorityRaw) : null,
     aiEnabled: (pick('aiEnabled') ?? 'false') === 'true',
@@ -270,6 +274,9 @@ export async function setSettings(values: SettingsPatch) {
   if (values.filenameTemplate) entries.push(['filenameTemplate', values.filenameTemplate])
   if (values.maxFileSizeMb != null) entries.push(['maxFileSizeMb', String(values.maxFileSizeMb)])
   if (values.verifyWrongSong != null) entries.push(['verifyWrongSong', String(values.verifyWrongSong)])
+  if (values.guestDownloadDisabled != null) {
+    entries.push(['guestDownloadDisabled', String(values.guestDownloadDisabled)])
+  }
   if (values.platformOrder) {
     entries.push(['platformOrder', JSON.stringify(normalizePlatformOrder(values.platformOrder))])
   }
