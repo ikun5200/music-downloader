@@ -35,7 +35,11 @@ export function usePreviewPlayer(audioRef: RefObject<HTMLAudioElement | null>) {
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
-    const onPlay = () => setPlaying(true)
+    const onPlay = () => {
+      // 某些浏览器/扩展会沿用上一次的播放速率，强制回到原速。
+      if (audio.playbackRate !== 1) audio.playbackRate = 1
+      setPlaying(true)
+    }
     const onPause = () => setPlaying(false)
     const onTime = () => setCurrentTime(audio.currentTime || 0)
     const onMeta = () => {
@@ -75,6 +79,10 @@ export function usePreviewPlayer(audioRef: RefObject<HTMLAudioElement | null>) {
   useEffect(() => {
     const audio = audioRef.current
     if (!audio || !track) return
+    audio.pause()
+    audio.defaultPlaybackRate = 1
+    audio.playbackRate = 1
+    audio.preservesPitch = true
     audio.src = track.streamUrl
     audio.load()
     setCurrentTime(0)
@@ -127,6 +135,7 @@ export function usePreviewPlayer(audioRef: RefObject<HTMLAudioElement | null>) {
             title: song.title,
             artist: song.artist,
             coverUrl: song.coverUrl,
+            duration: song.duration || null,
           }),
           signal: controller.signal,
         })

@@ -17,6 +17,7 @@ export interface AudioProbe {
   sampleRate?: number
   bitsPerRaw?: number
   bitRate?: number
+  duration?: number
   note?: string
   error?: string
   elapsedMs?: number
@@ -88,6 +89,137 @@ export function parseFlacStreamInfo(
   }
 }
 
+const MPEG_BITRATES: Record<number, number[]> = {
+  // MPEG1 Layer I
+  1: [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448],
+  // MPEG1 Layer II
+  2: [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384],
+  // MPEG1 Layer III
+  3: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],
+  // MPEG2/2.5 Layer I
+  4: [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256],
+  // MPEG2/2.5 Layer II/III
+  5: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
+}
+
+interface Mp3Info {
+  duration?: number
+  sampleRate?: number
+  bitRate?: number
+  audioStart: number
+}
+
+/**
+ * 从 MP3 帧头（以及 Xing/Info 帧）估算时长。
+ * 试听只需要判断“是否明显比原曲长”，不追求精确到毫秒。
+ */
+export function parseMp3Info(buf: Buffer, totalBytes?: number | null): Mp3Info | null {
+  if (buf.length < 4) return null
+  let offset = 0
+  if (buf.length >= 10 && buf.toString('latin1', 0, 3) === 'ID3') {
+    const size =
+      ((buf[6] & 0x7f) << 21) |
+      ((buf[7] & 0x7f) << 14) |
+      ((buf[8] & 0x7f) << 7) |
+      (buf[9] & 0x7f)
+    offset = 10 + size
+  }
+
+  let frame = offset
+  while (frame + 4 <= buf.length) {
+    if (buf[frame] === 0xff && (buf[frame + 1] & 0xe0) === 0xe0) break
+    frame++
+  }
+  if (frame + 4 > buf.length) return null
+
+  const header = buf.readUInt32BE(frame)
+  const versionBits = (header >> 19) & 3 // 3=MPEG1, 2=MPEG2, 0=MPEG2.5, 1=保留
+  const layerBits = (header >> 17) & 3 // 3=Layer I, 2=Layer II, 1=Layer III
+  const bitrateIndex = (header >> 12) & 0xf
+  const sampleRateIndex = (header >> 10) & 3
+  const padding = (header >> 9) & 1
+  const channelMode = (header >> 6) & 3
+  if (
+    versionBits === 1 ||
+    layerBits === 0 ||
+    bitrateIndex === 0 ||
+    bitrateIndex === 15 ||
+    sampleRateIndex === 3
+  ) {
+    return null
+  }
+
+  const sampleRates =
+    versionBits === 3
+      ? [44100, 48000, 32000]
+      : versionBits === 2
+        ? [22050, 24000, 16000]
+        : [11025, 12000, 8000]
+  const sampleRate = sampleRates[sampleRateIndex]
+  const tableKey = versionBits === 3 ? (4 - layerBits) : layerBits === 3 ? 4 : 5
+  const bitRate = MPEG_BITRATES[tableKey][bitrateIndex] * 1000
+  const layer = 4 - layerBits
+  const samplesPerFrame =
+    layer === 1 ? 384 : layer === 2 ? 1152 : versionBits === 3 ? 1152 : 576
+
+  // Xing/Info 位于帧头 + side info 之后，可直接拿到总帧数（VBR 也准确）。
+  const sideInfo = versionBits === 3 ? (channelMode === 3 ? 17 : 32) : channelMode === 3 ? 9 : 17
+  const xingOffset = frame + 4 + sideInfo
+  if (xingOffset + 12 <= buf.length) {
+    const tag = buf.toString('latin1', xingOffset, xingOffset + 4)
+    if (tag === 'Xing' || tag === 'Info') {
+      const flags = buf.readUInt32BE(xingOffset + 4)
+      if (flags & 1) {
+        const frames = buf.readUInt32BE(xingOffset + 8)
+        if (frames > 0) {
+          return {
+            duration: (frames * samplesPerFrame) / sampleRate,
+            sampleRate,
+            bitRate,
+            audioStart: frame,
+          }
+        }
+      }
+    }
+  }
+
+  if (totalBytes && totalBytes > frame && bitRate > 0) {
+    // 无 Xing 时按 CBR 估算；VBR 文件可能偏差，但足以识别 0.8x 这类慢放版本。
+    const audioBytes = totalBytes - frame
+    const frameLength =
+      layer === 1
+        ? Math.floor((12 * bitRate) / sampleRate + padding) * 4
+        : Math.floor(((layer === 3 && versionBits !== 3 ? 72 : 144) * bitRate) / sampleRate + padding)
+    if (frameLength > 0) {
+      const frames = Math.floor(audioBytes / frameLength)
+      return {
+        duration: (frames * samplesPerFrame) / sampleRate,
+        sampleRate,
+        bitRate,
+        audioStart: frame,
+      }
+    }
+  }
+
+  return { sampleRate, bitRate, audioStart: frame }
+}
+
+/** 从 MP4/M4A 的 mvhd box 读取时长；moov 不在前 128KB 时返回 null。 */
+export function parseM4aDuration(buf: Buffer): number | undefined {
+  const at = buf.indexOf(Buffer.from('mvhd', 'latin1'))
+  if (at < 0 || at + 32 > buf.length) return undefined
+  const version = buf[at + 4]
+  if (version === 0) {
+    const timescale = buf.readUInt32BE(at + 16)
+    const duration = buf.readUInt32BE(at + 20)
+    return timescale > 0 ? duration / timescale : undefined
+  }
+  if (at + 40 > buf.length) return undefined
+  const timescale = buf.readUInt32BE(at + 24)
+  const duration = Number(buf.readBigUInt64BE(at + 28))
+  return timescale > 0 ? duration / timescale : undefined
+}
+
 export async function probeAudio(url: string, timeout = 20000): Promise<AudioProbe> {
   if (!/^https?:\/\//i.test(url)) {
     return { ok: false, error: '返回的不是合法 HTTP 链接', isAudio: false }
@@ -133,6 +265,16 @@ export async function probeAudio(url: string, timeout = 20000): Promise<AudioPro
     const magic = detectMagic(buf)
     const isAudio = (res.status >= 200 && res.status < 400) && isAudioMagic(magic)
     const flac = magic === 'FLAC' ? parseFlacStreamInfo(buf) : null
+    const rangeTotal = contentRange?.match(/\/(\d+)\s*$/)?.[1]
+    // 206 且没有 Content-Range 时，Content-Length 只是分片长度，不能拿来估算总时长。
+    const totalBytes = rangeTotal
+      ? Number(rangeTotal)
+      : res.status === 200 && contentLength
+        ? Number(contentLength)
+        : null
+    const mp3 = magic.startsWith('MP3') ? parseMp3Info(buf, totalBytes) : null
+    const m4aDuration = magic === 'M4A/MP4' ? parseM4aDuration(buf) : undefined
+    const duration = flac?.duration ?? mp3?.duration ?? m4aDuration
     let note = ''
     if (res.status === 206 && isAudio) note = '支持 Range'
     else if (res.status === 200 && isAudio) note = '服务器返回完整响应'
@@ -152,8 +294,10 @@ export async function probeAudio(url: string, timeout = 20000): Promise<AudioPro
       magic,
       isAudio,
       qualityHint: flac?.qualityHint,
-      sampleRate: flac?.sampleRate,
+      sampleRate: flac?.sampleRate ?? mp3?.sampleRate,
       bitsPerRaw: flac?.bitsPerRaw,
+      bitRate: mp3?.bitRate,
+      duration,
       note,
       elapsedMs: Date.now() - started,
     }

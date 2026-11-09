@@ -1,5 +1,6 @@
 import { QUALITY_RANK, PLATFORM_NAMES, type Platform } from './constants'
 import { probeAudio } from './download/probe'
+import { isDurationMismatch } from './playback/duration'
 import { getRankedChannels } from './sources/selection'
 import { sourceManager } from './sources/manager'
 import { recordStat } from './sources/stats'
@@ -7,6 +8,8 @@ import { recordStat } from './sources/stats'
 export interface PreviewOptions {
   /** 指定音质；auto/空表示自动选择最快可用档位。 */
   quality?: string | null
+  /** 原曲时长（秒），用于排除慢放、加速、剪辑等非原版音源。 */
+  expectedDuration?: number | null
 }
 
 export interface PreviewResult {
@@ -14,6 +17,7 @@ export interface PreviewResult {
   quality: string
   channel: { id: string; name: string }
   elapsedMs: number
+  duration?: number
 }
 
 // 试听优先低码率：起播快、占用小；没有时再退到更高档位。
@@ -23,6 +27,8 @@ const CACHE_MAX = 100
 const TOTAL_TIMEOUT = 22_000
 
 const cache = new Map<string, { at: number; result: PreviewResult }>()
+
+class DurationMismatchError extends Error {}
 
 function cacheKey(
   platform: Platform,
@@ -61,7 +67,12 @@ export async function resolvePreview(
     options.quality && options.quality !== 'auto' ? options.quality : ''
   const key = cacheKey(platform, musicInfo, preferredQuality)
   const hit = cache.get(key)
-  if (hit && Date.now() - hit.at < CACHE_TTL) return hit.result
+  if (hit && Date.now() - hit.at < CACHE_TTL) {
+    if (!isDurationMismatch(options.expectedDuration, hit.result.duration)) {
+      return hit.result
+    }
+    cache.delete(key)
+  }
 
   const channels = await getRankedChannels(platform)
   if (!channels.length) {
@@ -95,12 +106,20 @@ export async function resolvePreview(
         if (!probe.isAudio) {
           throw new Error(probe.error || probe.note || '返回的不是有效音频')
         }
+        if (isDurationMismatch(options.expectedDuration, probe.duration)) {
+          throw new DurationMismatchError(
+            `音源时长 ${Math.round(probe.duration || 0)} 秒与原曲 ${Math.round(
+              options.expectedDuration || 0
+            )} 秒不符，疑似慢放/剪辑版本`
+          )
+        }
 
         const result: PreviewResult = {
           url: resolved.url,
           quality,
           channel: { id: channel.id, name: channel.name },
           elapsedMs: Date.now() - attemptStarted,
+          duration: probe.duration,
         }
         await recordStat(channel.id, platform, true, result.elapsedMs)
         cacheSet(key, result)
@@ -108,7 +127,10 @@ export async function resolvePreview(
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         errors.push(`${channel.name}/${quality}: ${message}`)
-        await recordStat(channel.id, platform, false, Date.now() - attemptStarted, message)
+        // 时长不符说明这个音源是别的版本，不是渠道故障，不能拉低渠道成功率。
+        if (!(e instanceof DurationMismatchError)) {
+          await recordStat(channel.id, platform, false, Date.now() - attemptStarted, message)
+        }
       }
     }
   }

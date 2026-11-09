@@ -338,7 +338,11 @@ export function OnlineClient({ initial }: { initial: OnlineHome }) {
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
-    const onPlay = () => setPlaying(true)
+    const onPlay = () => {
+      // 某些浏览器/扩展会沿用上一次的播放速率，强制回到原速。
+      if (audio.playbackRate !== 1) audio.playbackRate = 1
+      setPlaying(true)
+    }
     const onPause = () => setPlaying(false)
     const onTime = () => setCurrentTime(audio.currentTime || 0)
     const onMeta = () => {
@@ -460,6 +464,10 @@ export function OnlineClient({ initial }: { initial: OnlineHome }) {
         setActualQuality(data.quality)
         setSourceName(data.platformName)
         setDuration(data.duration || track.duration || 0)
+        audio.pause()
+        audio.defaultPlaybackRate = 1
+        audio.playbackRate = 1
+        audio.preservesPitch = true
         audio.src = data.streamUrl
         audio.load()
         if (seekTo && Number.isFinite(seekTo)) {

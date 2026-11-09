@@ -2,6 +2,7 @@ import { PLATFORM_NAMES, type Platform } from '../constants'
 import { searchAll } from '../search'
 import type { RawSearchSong } from '../search/types'
 import { artistKeys, titleKey } from '../metadata/normalize'
+import { hasPlaybackVariant } from '../playback/variant'
 import { resolvePreview, type PreviewResult } from '../preview'
 import { getSettings } from '../settings'
 import { signPreviewToken } from '../preview-token'
@@ -33,6 +34,19 @@ interface Candidate {
   platform: Platform
   score: number
   queryIndex: number
+  variant: boolean
+}
+
+function artistOverlap(wanted: Set<string>, got: string[]): boolean {
+  if (!wanted.size || !got.length) return false
+  for (const key of got) {
+    if (wanted.has(key)) return true
+    for (const want of wanted) {
+      const min = Math.min(want.length, key.length)
+      if (min >= 2 && (want.includes(key) || key.includes(want))) return true
+    }
+  }
+  return false
 }
 
 function scoreCandidate(
@@ -53,18 +67,30 @@ function scoreCandidate(
 
   const wantedArtists = new Set(artistKeys(input.artist || ''))
   const gotArtists = artistKeys(song.artist)
-  if (wantedArtists.size && gotArtists.some((key) => wantedArtists.has(key))) score += 45
-  else if (wantedArtists.size && gotArtists.length) score -= 10
+  const genericArtist = /^(various artists|群星|未知|unknown)$/i.test(
+    String(input.artist || '').trim()
+  )
+  if (!genericArtist && wantedArtists.size && gotArtists.length) {
+    // 在线播放宁可报错，也不要播成同名的翻唱/其他歌手版本。
+    if (!artistOverlap(wantedArtists, gotArtists)) return 0
+    score += 45
+  }
 
   if (input.album) {
     const wantAlbum = titleKey(input.album)
     const gotAlbum = titleKey(song.album || '')
     if (wantAlbum && gotAlbum === wantAlbum) score += 8
   }
+  const requestedVariant = hasPlaybackVariant(input.title, input.album)
+  if (!requestedVariant && hasPlaybackVariant(song.title, song.album)) {
+    // 原曲请求不能落到慢放/降调/Live/伴奏版本上。
+    score -= 90
+  }
   if (input.duration && song.duration) {
     const diff = Math.abs(input.duration - song.duration)
     if (diff <= 3) score += 20
     else if (diff <= 10) score += 10
+    else if (diff > Math.max(20, input.duration * 0.2)) score -= 80
     else score -= Math.min(25, diff / 4)
   }
   score += Math.max(0, 8 - platformIndex) + Math.max(0, 3 - queryIndex)
@@ -76,11 +102,20 @@ function collectCandidates(
   input: OnlinePlayInput,
   queryIndex: number
 ): Candidate[] {
+  const requestedVariant = hasPlaybackVariant(input.title, input.album)
   const out: Candidate[] = []
   results.forEach((result, platformIndex) => {
     for (const song of result.results) {
       const score = scoreCandidate(song, input, platformIndex, queryIndex)
-      if (score > 0) out.push({ song, platform: result.platform, score, queryIndex })
+      if (score > 0) {
+        out.push({
+          song,
+          platform: result.platform,
+          score,
+          queryIndex,
+          variant: !requestedVariant && hasPlaybackVariant(song.title, song.album),
+        })
+      }
     }
   })
   return out
@@ -115,13 +150,20 @@ export async function resolveOnlinePlay(input: OnlinePlayInput): Promise<OnlineP
   }
   if (!deduped.length) throw new Error('音源里没有找到匹配版本')
 
+  // 有原版候选时优先原版；只有慢放/降调等版本时宁可报错，也不要播成慢放。
+  const clean = deduped.filter((candidate) => !candidate.variant)
+  const pool = clean.length ? clean : deduped
+  if (!clean.length) {
+    throw new Error('只找到慢放/降调/现场等非原版音源，已跳过')
+  }
+
   const errors: string[] = []
-  for (const candidate of deduped.slice(0, 4)) {
+  for (const candidate of pool.slice(0, 6)) {
     try {
       const result: PreviewResult = await resolvePreview(
         candidate.platform,
         candidate.song.musicInfo,
-        { quality: input.quality }
+        { quality: input.quality, expectedDuration: input.duration }
       )
       return {
         streamUrl: `/api/preview/stream?t=${encodeURIComponent(
@@ -135,7 +177,7 @@ export async function resolveOnlinePlay(input: OnlinePlayInput): Promise<OnlineP
         artist: candidate.song.artist,
         album: candidate.song.album,
         coverUrl: candidate.song.coverUrl,
-        duration: candidate.song.duration,
+        duration: result.duration ?? candidate.song.duration,
         requestedQuality: input.quality || null,
       }
     } catch (e) {

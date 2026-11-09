@@ -17,6 +17,7 @@ const schema = z.object({
   artist: z.string().max(300).optional(),
   coverUrl: z.string().max(2000).optional().nullable(),
   quality: z.string().max(30).optional().nullable(),
+  duration: z.number().positive().max(36_000).optional().nullable(),
 })
 
 export async function POST(req: Request) {
@@ -44,12 +45,16 @@ export async function POST(req: Request) {
 
   const platform = parsed.data.platform as Platform
   const musicInfo = parsed.data.musicInfo
+  const rawDuration = parsed.data.duration ?? Number(musicInfo.interval)
+  const expectedDuration =
+    Number.isFinite(rawDuration) && rawDuration > 0 ? Number(rawDuration) : null
   try {
     const result = await resolvePreview(platform, musicInfo, {
       quality: parsed.data.quality,
+      expectedDuration,
     })
     const token = signPreviewToken(result.url, platform)
-    const duration = Number(musicInfo.interval)
+    const duration = expectedDuration ?? result.duration
 
     return NextResponse.json({
       code: 0,
@@ -60,7 +65,7 @@ export async function POST(req: Request) {
         title: parsed.data.title || String(musicInfo.name || '未知歌曲'),
         artist: parsed.data.artist || String(musicInfo.singer || '未知歌手'),
         coverUrl: parsed.data.coverUrl || null,
-        duration: Number.isFinite(duration) && duration > 0 ? duration : null,
+        duration: Number.isFinite(duration) && duration && duration > 0 ? duration : null,
         elapsedMs: result.elapsedMs,
       },
     })
