@@ -25,6 +25,7 @@ export interface BatchDto {
   processed: number
   succeeded: number
   failed: number
+  skipped: number
   error?: string | null
   downloadCompleted: number
   downloadFailed: number

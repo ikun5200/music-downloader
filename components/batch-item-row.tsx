@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertCircle, CheckCheck, Loader2, Pause, X } from 'lucide-react'
+import { AlertCircle, CheckCheck, Loader2, Pause, SkipForward, X } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import type { BatchItemDto } from '@/lib/batch/types'
 import { cn } from '@/lib/utils'
@@ -31,6 +31,9 @@ export function BatchItemRow({ item }: { item: BatchItemDto }) {
   } else if (item.status === 'canceled') {
     icon = <X className="h-3.5 w-3.5 shrink-0 text-white/30" />
     right = '已取消'
+  } else if (item.status === 'skipped') {
+    icon = <SkipForward className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+    right = item.error || '已下载过，跳过'
   } else if (item.status === 'queued') {
     right = item.title
       ? `${item.aiUsed ? 'AI · ' : ''}${item.title}${item.artist ? ` · ${item.artist}` : ''}`
@@ -72,9 +75,11 @@ export function BatchItemRow({ item }: { item: BatchItemDto }) {
             'max-w-[55%] shrink-0 truncate text-right',
             item.status === 'failed' || download === 'failed'
               ? 'text-red-300/70'
-              : item.status === 'canceled' || download === 'canceled'
-                ? 'text-white/25'
-                : 'text-emerald-300/75'
+              : item.status === 'skipped'
+                ? 'text-amber-300/70'
+                : item.status === 'canceled' || download === 'canceled'
+                  ? 'text-white/25'
+                  : 'text-emerald-300/75'
           )}
           title={item.error || item.downloadError || item.selectionReason || undefined}
         >

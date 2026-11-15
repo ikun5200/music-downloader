@@ -33,15 +33,16 @@ describe('batch retry helpers', () => {
     expect(isRetryableBatchItem({ id: '2', status: 'canceled', downloadJobId: null, line: '测试 歌手', title: null, album: null }, jobStatus)).toBe(false)
   })
 
-  it('recounts processed/succeeded/failed after resetting items', () => {
+  it('recounts processed/succeeded/failed/skipped after resetting items', () => {
     expect(
       recountBatchItems([
         { status: 'queued' },
         { status: 'queued' },
         { status: 'failed' },
+        { status: 'skipped' },
         { status: 'pending' },
         { status: 'canceled' },
       ])
-    ).toEqual({ processed: 3, succeeded: 2, failed: 1 })
+    ).toEqual({ processed: 4, succeeded: 2, failed: 1, skipped: 1 })
   })
 })

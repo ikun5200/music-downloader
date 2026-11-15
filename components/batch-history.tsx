@@ -210,10 +210,15 @@ export function BatchHistory() {
                   选版 {batch.processed}/{batch.total}
                 </span>
                 <span className="text-[11.5px] text-white/55">
-                  下载 {batch.downloadCompleted}/{batch.total}
+                  下载 {batch.downloadCompleted}/{batch.downloadTotal}
                 </span>
                 {downloading && batch.status !== 'paused' ? (
                   <span className="text-[11px] text-cyan-300/70">下载中</span>
+                ) : null}
+                {batch.skipped ? (
+                  <span className="text-[11px] text-amber-300/70">
+                    已存在跳过 {batch.skipped}
+                  </span>
                 ) : null}
                 {batch.failed ? (
                   <span className="text-[11px] text-red-300/70">选版失败 {batch.failed}</span>

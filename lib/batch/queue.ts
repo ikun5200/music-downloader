@@ -7,6 +7,11 @@ import { getAiConfig, getSettings } from '../settings'
 import { sourceManager } from '../sources/manager'
 import { selectBestSong, type PlatformInfo } from './selector'
 import { checkVersionBeforeDownload } from '../ai/version-guard'
+import {
+  AlreadyDownloadedError,
+  findDownloadedDuplicateByLine,
+  type DownloadedMatch,
+} from '../downloaded'
 
 interface BatchQueueState {
   started: boolean
@@ -38,6 +43,29 @@ async function batchStatus(batchId: string): Promise<string | null> {
     })
   )
   return batch?.status || null
+}
+
+async function markSkipped(
+  batchId: string,
+  itemId: string,
+  match: DownloadedMatch
+) {
+  await prisma.$transaction([
+    prisma.batchItem.update({
+      where: { id: itemId },
+      data: {
+        status: 'skipped',
+        title: match.title,
+        artist: match.artist,
+        album: match.album,
+        error: `已下载过同名同歌手同版本，跳过：${match.path}`.slice(0, 1000),
+      },
+    }),
+    prisma.batchJob.update({
+      where: { id: batchId },
+      data: { processed: { increment: 1 }, skipped: { increment: 1 } },
+    }),
+  ])
 }
 
 async function runBatch(batchId: string) {
@@ -92,6 +120,13 @@ async function runBatch(batchId: string) {
     if (current === 'canceled') {
       await cancelPending(batchId)
       return
+    }
+
+    // 先按“歌名 + 歌手 + 版本”快速预检，已下载的直接跳过，不再浪费搜索/AI。
+    const preexisting = await findDownloadedDuplicateByLine(item.line).catch(() => null)
+    if (preexisting) {
+      await markSkipped(batchId, item.id, preexisting)
+      continue
     }
 
     await prisma.batchItem.update({
@@ -194,6 +229,10 @@ async function runBatch(batchId: string) {
           .catch(() => {})
         await cancelPending(batchId).catch(() => {})
         return
+      }
+      if (e instanceof AlreadyDownloadedError) {
+        await markSkipped(batchId, item.id, e.match)
+        continue
       }
       const message = e instanceof Error ? e.message : String(e)
       await prisma.$transaction([

@@ -6,6 +6,7 @@ import { ensureDownloadDirs } from './download/filename'
 import { startQueue } from './download/queue'
 import { startBatchQueue } from './batch/queue'
 import { startMetadataQueue } from './metadata/queue'
+import { startDownloadedIndexScheduler } from './downloaded/scheduler'
 import { claimQueueBoot } from './queue-boot'
 import { defaultPlatformRank } from './sources/priority'
 import { PLATFORMS } from './constants'
@@ -34,6 +35,7 @@ async function runBootstrap() {
   await startQueue()
   await startBatchQueue()
   await startMetadataQueue()
+  startDownloadedIndexScheduler()
 }
 
 async function ensurePlatformPriority() {

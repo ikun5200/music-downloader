@@ -35,6 +35,7 @@ function batch(items: BatchItem[]): BatchJob & { items: BatchItem[] } {
     processed: items.length,
     succeeded: items.filter((row) => row.downloadJobId).length,
     failed: items.filter((row) => !row.downloadJobId).length,
+    skipped: 0,
     error: null,
     createdAt: now,
     startedAt: now,
@@ -65,8 +66,8 @@ describe('batch progress DTO', () => {
     expect(dto.downloadTotal).toBe(3)
     expect(dto.downloadCompleted).toBe(1)
     expect(dto.downloadFailed).toBe(0)
-    // 分母使用批次总数：(1 + 0.5 + 0.2) / 4 = 42.5%
-    expect(dto.downloadProgress).toBe(43)
+    // 分母只算真正进入下载的条目：(1 + 0.5 + 0.2) / 3 = 56.7%
+    expect(dto.downloadProgress).toBe(57)
     expect(dto.items[1].downloadStatus).toBe('downloading')
     expect(dto.items[2].downloadStatus).toBe('paused')
     expect(dto.items[3].downloadStatus).toBeNull()

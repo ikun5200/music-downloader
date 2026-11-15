@@ -18,6 +18,7 @@ import { processMetadataForJob, type MetadataProcessResult } from '../metadata/p
 import { writeBasicTags } from '../metadata/tag'
 import { resolveArtists } from '../artists'
 import { checkVersionAfterDownload, type VersionCheckResult } from '../ai/version-guard'
+import { indexDownloadedFile } from '../downloaded'
 import { findCrossPlatformFallback } from './fallback'
 
 const cancelControllers = new Map<string, AbortController>()
@@ -344,6 +345,8 @@ export async function runPipeline(job: DownloadJob): Promise<void> {
       const finalPath = await uniquePath(root, planned.relative)
       await moveIntoPlace(stagedFile, finalPath.absolute)
       fallback = null
+      // 完成后立即进索引，下一次同名下载无需等每日扫描。
+      await indexDownloadedFile(finalPath.absolute, { downloadJobId: job.id }).catch(() => null)
 
       await updateJob(job.id, {
         status: 'completed',

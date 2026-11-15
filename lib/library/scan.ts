@@ -46,13 +46,19 @@ function isAudioFile(name: string): boolean {
   return AUDIO_EXTENSIONS.has(path.extname(name).toLowerCase())
 }
 
-export async function listAudioFiles(root: string): Promise<string[]> {
+export async function listAudioFiles(
+  root: string,
+  options: { strictRoot?: boolean } = {}
+): Promise<string[]> {
   const out: string[] = []
-  async function walk(dir: string) {
+  async function walk(dir: string, isRoot = false) {
     let entries
     try {
       entries = await fs.readdir(dir, { withFileTypes: true })
-    } catch {
+    } catch (error) {
+      // 下载目录索引依赖“列出的文件 = 真实存在的文件”来删除旧记录；
+      // 根目录读取失败时必须报错，不能当成空目录把索引清空。
+      if (isRoot && options.strictRoot) throw error
       return
     }
     for (const entry of entries) {
@@ -67,7 +73,7 @@ export async function listAudioFiles(root: string): Promise<string[]> {
       if (entry.isFile() && isAudioFile(entry.name)) out.push(absolute)
     }
   }
-  await walk(root)
+  await walk(root, true)
   out.sort((a, b) => a.localeCompare(b, 'zh-CN'))
   return out
 }

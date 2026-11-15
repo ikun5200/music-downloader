@@ -334,10 +334,12 @@ export function SearchClient() {
     .filter(Boolean)
   const batchDone = batch?.succeeded ?? 0
   const batchFailed = batch?.failed ?? 0
+  const batchSkipped = batch?.skipped ?? 0
   const batchTotal = batch?.total ?? 0
   const batchProcessed = batch?.processed ?? 0
   const batchDownloadCompleted = batch?.downloadCompleted ?? 0
   const batchDownloadFailed = batch?.downloadFailed ?? 0
+  const batchDownloadTotal = batch?.downloadTotal ?? 0
   const batchDownloadProgress = batch?.downloadProgress ?? 0
   const batchSelectProgress = batchTotal
     ? Math.min(100, (batchProcessed / batchTotal) * 100)
@@ -573,8 +575,9 @@ export function SearchClient() {
                 {batch ? (
                   <span className="text-[10.5px] text-white/30">
                     已选版 {batchDone}
+                    {batchSkipped ? ` · 已存在跳过 ${batchSkipped}` : ''}
                     {batchFailed ? ` · 选版失败 ${batchFailed}` : ''}
-                    {' · '}下载完成 {batchDownloadCompleted}/{batchTotal}
+                    {' · '}下载完成 {batchDownloadCompleted}/{batchDownloadTotal}
                     {batchDownloadFailed ? ` · 下载失败 ${batchDownloadFailed}` : ''}
                   </span>
                 ) : null}
@@ -613,8 +616,11 @@ export function SearchClient() {
                       选版 {batchProcessed}/{batchTotal}
                     </span>
                     <span>
-                      下载 {batchDownloadCompleted}/{batchTotal}
+                      下载 {batchDownloadCompleted}/{batchDownloadTotal}
                     </span>
+                    {batchSkipped ? (
+                      <span className="text-amber-300/60">已存在跳过 {batchSkipped}</span>
+                    ) : null}
                     {batchDownloading && batch.status !== 'paused' ? (
                       <span className="text-cyan-300/60">下载中</span>
                     ) : null}

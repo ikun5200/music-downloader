@@ -110,6 +110,7 @@ model BatchJob {
   processed  Int         @default(0)
   succeeded  Int         @default(0)
   failed     Int         @default(0)
+  skipped    Int         @default(0)
   error      String?
   createdAt  DateTime    @default(now())
   startedAt  DateTime?
@@ -196,4 +197,31 @@ model LyricsLookup {
   note      String?
   attempts  Int      @default(1)
   updatedAt DateTime @updatedAt
+}
+
+/// 下载目录的持久化文件索引。以磁盘文件为准，每日重扫校正，
+/// 不依赖 DownloadJob 记录来判断某首歌是否已经下载过。
+model DownloadedTrack {
+  id            String   @id @default(cuid())
+  path          String   @unique
+  fileName      String
+  title         String
+  artist        String
+  album         String?
+  titleKey      String
+  artistKey     String
+  versionKey    String   @default("")
+  duration      Float?
+  size          Int
+  mtimeMs       Float
+  downloadJobId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastSeenAt    DateTime @default(now())
+
+  @@index([titleKey, artistKey])
+  @@index([titleKey])
+  @@index([artistKey])
+  @@index([versionKey])
+  @@index([lastSeenAt])
 }

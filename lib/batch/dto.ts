@@ -64,8 +64,8 @@ export function batchToDto(
     // 失败/取消不计入下载进度，避免“下载数量少但进度条先满”。
     return sum
   }, 0)
-  const downloadProgress = batch.total
-    ? Math.round((units / batch.total) * 100)
+  const downloadProgress = downloadable.length
+    ? Math.round((units / downloadable.length) * 100)
     : 0
 
   return {
@@ -76,6 +76,7 @@ export function batchToDto(
     processed: batch.processed,
     succeeded: batch.succeeded,
     failed: batch.failed,
+    skipped: batch.skipped,
     downloadCompleted,
     downloadFailed,
     downloadTotal: downloadable.length,

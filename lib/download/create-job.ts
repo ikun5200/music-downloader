@@ -4,6 +4,7 @@ import { prisma } from '../db'
 import { sourceManager } from '../sources/manager'
 import { getAiConfig, getSettings } from '../settings'
 import { cleanSongTitle } from '../ai/title-clean'
+import { AlreadyDownloadedError, findDownloadedDuplicate } from '../downloaded'
 import { capQuality } from './quality-cap'
 import { wakeQueue } from './queue'
 
@@ -57,6 +58,20 @@ export async function createDownloadJob(input: CreateDownloadInput): Promise<Dow
     : musicInfo.albumName
       ? String(musicInfo.albumName).slice(0, 300)
       : null
+
+  // 以磁盘上的下载目录索引为准，不再依赖 DownloadJob 记录。
+  const duplicate = await findDownloadedDuplicate({
+    title,
+    artist,
+    album,
+    requestLine: input.requestLine,
+    duration: musicInfo.interval ? Number(musicInfo.interval) : null,
+  }).catch((error) => {
+    // 索引暂时不可用时不能阻断正常下载。
+    console.warn('[download] 已下载检查失败，继续创建任务:', error)
+    return null
+  })
+  if (duplicate) throw new AlreadyDownloadedError(duplicate)
 
   const job = await prisma.downloadJob.create({
     data: {

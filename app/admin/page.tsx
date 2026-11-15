@@ -6,6 +6,7 @@ import { getDisplayDownloadDir, getSettings } from '@/lib/settings'
 import { PLATFORM_NAMES, type Platform } from '@/lib/constants'
 import { Badge } from '@/components/ui/badge'
 import { PlatformBadge } from '@/components/platform-badge'
+import { DownloadedIndexCard } from '@/components/admin/downloaded-index-card'
 import { formatBytes } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -114,6 +115,10 @@ export default async function AdminDashboard() {
             </div>
           )
         })}
+      </div>
+
+      <div className="mt-3">
+        <DownloadedIndexCard />
       </div>
 
       <div className="mt-6 grid gap-3 lg:grid-cols-[1.4fr_1fr]">

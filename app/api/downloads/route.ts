@@ -6,6 +6,7 @@ import { type Platform } from '@/lib/constants'
 import { rateLimit } from '@/lib/rate-limit'
 import { prisma } from '@/lib/db'
 import { createDownloadJob } from '@/lib/download/create-job'
+import { AlreadyDownloadedError } from '@/lib/downloaded'
 import { jobToDto } from '@/lib/download/dto'
 import { ensureRuntime } from '@/lib/runtime'
 
@@ -107,9 +108,20 @@ export async function POST(req: Request) {
       artist: input.artist,
       album: input.album,
       coverUrl: input.coverUrl,
+      requestLine: [input.title, input.artist].filter(Boolean).join(' ') || null,
     })
     return NextResponse.json({ code: 0, data: jobToDto(job) }, { status: 201 })
   } catch (e) {
+    if (e instanceof AlreadyDownloadedError) {
+      return NextResponse.json(
+        {
+          code: 409,
+          message: e.message,
+          data: { downloaded: e.match },
+        },
+        { status: 409 }
+      )
+    }
     return NextResponse.json(
       { code: 400, message: e instanceof Error ? e.message : String(e) },
       { status: 400 }

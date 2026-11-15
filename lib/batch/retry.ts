@@ -36,7 +36,8 @@ export function isRetryableBatchItem(
 export function recountBatchItems(items: Array<{ status: string }>) {
   const succeeded = items.filter((item) => item.status === 'queued').length
   const failed = items.filter((item) => item.status === 'failed').length
-  return { processed: succeeded + failed, succeeded, failed }
+  const skipped = items.filter((item) => item.status === 'skipped').length
+  return { processed: succeeded + failed + skipped, succeeded, failed, skipped }
 }
 
 /**
@@ -137,6 +138,7 @@ export async function retryFailedBatchItems(
         processed: counts.processed,
         succeeded: counts.succeeded,
         failed: counts.failed,
+        skipped: counts.skipped,
         finishedAt: null,
         error: null,
       },
